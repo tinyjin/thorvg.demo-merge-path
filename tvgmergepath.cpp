@@ -24,6 +24,11 @@
 #include "mergepath.h"
 #include "template.h"
 
+#ifndef RES_DIR
+    #define RES_DIR "res"
+#endif
+
+static const char* fontFile = RES_DIR"/font/PublicSans-Regular.ttf";
 static bool traceCost = false;
 
 
@@ -36,6 +41,12 @@ struct UserDemo : tvgdemo::Demo
     static constexpr uint32_t COLS = 3;
     static constexpr uint32_t ROWS = 2;
     static constexpr uint32_t TILES = COLS * ROWS;
+
+    //the first five are the lottie merge modes, the last one stacks two of them
+    static constexpr const char* LABELS[TILES] = {
+        "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)",
+        "Intersect (mm:4)", "Exclude (mm:5)", "Add, then Subtract"
+    };
 
     struct Tile
     {
@@ -97,6 +108,14 @@ struct UserDemo : tvgdemo::Demo
     {
         tileSize = std::min(float(w) / COLS, float(h) / ROWS);
 
+        auto labeled = (Text::load(fontFile) == Result::Success);
+        if (!labeled) printf("font not found (%s), the tiles stay unlabeled\n", fontFile);
+
+        auto bg = Shape::gen();
+        bg->appendRect(0.0f, 0.0f, float(w), float(h));
+        bg->fill(255, 255, 255);
+        canvas->add(bg);
+
         for (uint32_t i = 0; i < TILES; ++i) {
             auto& tile = tiles[i];
             tile.offset = {(i % COLS) * tileSize, (i / COLS) * tileSize};
@@ -122,6 +141,16 @@ struct UserDemo : tvgdemo::Demo
             operands->translate(tile.offset.x, tile.offset.y);
             tile.operands = operands;
             canvas->add(operands);
+
+            if (!labeled) continue;
+
+            auto label = Text::gen();
+            label->font("PublicSans-Regular");
+            label->size(tileSize * 0.052f);
+            label->text(LABELS[i]);
+            label->fill(70, 75, 85);
+            label->translate(tile.offset.x + tileSize * 0.07f, tile.offset.y + tileSize * 0.86f);
+            canvas->add(label);
         }
 
         return update(canvas, 0);
@@ -131,8 +160,8 @@ struct UserDemo : tvgdemo::Demo
     {
         auto progress = float(elapsed % 4000) / 4000.0f;
         auto angle = progress * 2.0f * float(M_PI);
-        auto center = Point{tileSize * 0.5f, tileSize * 0.5f};
-        auto radius = tileSize * 0.3f;
+        auto center = Point{tileSize * 0.5f, tileSize * 0.44f};
+        auto radius = tileSize * 0.28f;
 
         //the operands keep moving, so the whole solve is redone on every frame
         RenderPath a, b, c;

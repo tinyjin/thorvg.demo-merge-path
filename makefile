@@ -5,7 +5,9 @@ SRC = tvgmergepath.cpp
 #   make THORVG=/path/to/install
 THORVG ?= /opt/homebrew
 
-CXXFLAGS = -O3 -std=c++20 -I$(THORVG)/include
+RES_DIR = $(CURDIR)/res
+
+CXXFLAGS = -O3 -std=c++20 -DRES_DIR=\"$(RES_DIR)\" -I$(THORVG)/include
 LIBS = $(shell sdl2-config --cflags --libs) -L$(THORVG)/lib -lthorvg -Wl,-rpath,$(THORVG)/lib
 
 # homebrew headers/libs for SDL2 when THORVG points elsewhere

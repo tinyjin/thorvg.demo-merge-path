@@ -196,7 +196,7 @@ struct SwWindow : Window
     {
         if (!initialized) return;
 
-        window = SDL_CreateWindow("ThorVG Lottie Audio (Software)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow("ThorVG Merge Path (Software)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
 
         //Create a Canvas
         canvas = tvg::SwCanvas::gen();
@@ -245,7 +245,7 @@ struct GlWindow : Window
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 #endif
-        window = SDL_CreateWindow("ThorVG Lottie Audio (OpenGL/ES)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow("ThorVG Merge Path (OpenGL/ES)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
         context = SDL_GL_CreateContext(window);
 
         //Create a Canvas
@@ -296,7 +296,7 @@ struct WgWindow : Window
     {
         if (!initialized) return;
 
-        window = SDL_CreateWindow("ThorVG Lottie Audio (WebGPU)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_HIDDEN);
+        window = SDL_CreateWindow("ThorVG Merge Path (WebGPU)", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_HIDDEN);
 
         //Create WebGPU surface from the window
         SDL_SysWMinfo windowWMInfo;
