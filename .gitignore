@@ -1,0 +1,7 @@
+tvgmergepath
+*.o
+*.dSYM
+.DS_Store
+.vscode
+.idea
+*.swp
