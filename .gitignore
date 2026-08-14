@@ -8,3 +8,10 @@ tvgmergepath
 tvgmergepath-flat
 tvgmergepath-curve
 .ab/
+skiamergepath
+bench/tvg_bench
+bench/skia_bench
+bench/crosscheck
+bench/visual
+bench/linecost
+bench/*.bmp
