@@ -105,7 +105,8 @@ static void paint(SkCanvas* canvas, const SkPath& path, bool fill)
 
 static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
 {
-    auto tile = std::min(float(w) / 3.0f, float(h) / 2.0f);
+    auto tile = std::min(float(w) / 4.0f, float(h) / 2.0f);
+    auto progress = float(elapsed % 4000) / 4000.0f;
     auto angle = float(elapsed % 4000) / 4000.0f * 2.0f * float(M_PI);
     auto cx = tile * 0.5f, cy = tile * 0.44f;
     auto radius = tile * 0.28f;
@@ -114,9 +115,19 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     auto b = build(scenario::circle(cx + cosf(angle) * radius * 0.5f, cy + sinf(angle) * radius * 0.5f, radius * 0.62f));
     auto c = rect(cx, cy + cosf(angle) * radius * 0.5f, tile * 0.42f, tile * 0.06f);
 
+    /* the same two limit cases as the thorvg demo, to the coordinate */
+    auto gap = (progress < 0.34f) ? tile * 0.06f : (progress < 0.67f ? 0.0f : tile * -0.005f);
+    auto bx = tile * 0.25f, by = tile * 0.275f;
+    auto bw = tile * 0.25f, bh = tile * 0.30f;
+    SkPathBuilder db, eb;
+    db.moveTo(bx, by); db.lineTo(bx + bw, by); db.lineTo(bx + bw, by + bh); db.lineTo(bx, by + bh); db.close();
+    eb.moveTo(bx + bw + gap, by); eb.lineTo(bx + 2 * bw + gap, by); eb.lineTo(bx + 2 * bw + gap, by + bh); eb.lineTo(bx + bw + gap, by + bh); eb.close();
+    auto d = db.detach();
+    auto e = eb.detach();
+
     auto begin = clk::now();
 
-    SkPath out[6], tmp;
+    SkPath out[8], tmp, again;
     out[0] = merge(a, b);
     Op(a, b, kUnion_SkPathOp, &out[1]);
     Op(a, b, kDifference_SkPathOp, &out[2]);
@@ -124,6 +135,8 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     Op(a, b, kXOR_SkPathOp, &out[4]);
     //a group accumulates, so a merged result becomes the operand of the next one
     if (Op(a, b, kUnion_SkPathOp, &tmp)) Op(tmp, c, kDifference_SkPathOp, &out[5]);
+    Op(d, e, kUnion_SkPathOp, &out[6]);
+    if (Op(a, b, kUnion_SkPathOp, &again)) Op(again, b, kDifference_SkPathOp, &out[7]);
 
     auto spent = std::chrono::duration<double, std::milli>(clk::now() - begin).count();
 
@@ -131,14 +144,19 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     frame.setStyle(SkPaint::kStroke_Style);
     frame.setColor(0xffe1e4eb);
 
-    for (uint32_t i = 0; i < 6; ++i) {
+    for (uint32_t i = 0; i < 8; ++i) {
         canvas->save();
-        canvas->translate(float(i % 3) * tile, float(i / 3) * tile);
+        canvas->translate(float(i % 4) * tile, float(i / 4) * tile);
         canvas->drawRect({0.0f, 0.0f, tile, tile}, frame);
         paint(canvas, out[i], true);
-        paint(canvas, a, false);
-        paint(canvas, b, false);
-        if (i == 5) paint(canvas, c, false);
+        if (i == 6) {
+            paint(canvas, d, false);
+            paint(canvas, e, false);
+        } else {
+            paint(canvas, a, false);
+            paint(canvas, b, false);
+            if (i == 5) paint(canvas, c, false);
+        }
         canvas->restore();
     }
     return spent;
@@ -219,11 +237,11 @@ int main(int argc, char** argv)
         else if (!strcmp(argv[i], "-o")) offscreen = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 2000;
     }
 
-    uint32_t W = count > 0 ? 900 : 1200;
+    uint32_t W = count > 0 ? 900 : 1600;
     uint32_t H = count > 0 ? 900 : 800;
 
     if (count > 0) printf("stress: a union of %d curve blobs, accumulated over %d merges\n", count, count - 1);
-    else printf("tiles: Merge | Add | Subtract  /  Intersect | Exclude | Add then Subtract\n");
+    else printf("tiles: Merge | Add | Subtract | Intersect  /  Exclude | Add-then-Subtract | shared edge | reused operand\n");
 
     if (offscreen) { dump(W, H, uint32_t(offscreen), uint32_t(count)); return 0; }
 

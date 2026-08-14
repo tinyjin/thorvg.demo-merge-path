@@ -41,14 +41,16 @@ struct TilesDemo : tvgdemo::Demo
 
     TilesDemo(bool trace) : trace(trace) {}
 
-    static constexpr uint32_t COLS = 3;
+    static constexpr uint32_t COLS = 4;
     static constexpr uint32_t ROWS = 2;
     static constexpr uint32_t TILES = COLS * ROWS;
 
-    //the first five are the lottie merge modes, the last one stacks two of them
+    /* the first five are the lottie merge modes, then one that stacks two of them.
+       the last two are the cases this solver cannot do yet - both come down to a
+       boundary that lies on top of the counterpart's boundary. */
     static constexpr const char* LABELS[TILES] = {
-        "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)",
-        "Intersect (mm:4)", "Exclude (mm:5)", "Add, then Subtract"
+        "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)", "Intersect (mm:4)",
+        "Exclude (mm:5)", "Add, then Subtract", "Add — shared edge", "(a+b) - b — reused"
     };
 
     struct Tile
@@ -86,6 +88,15 @@ struct TilesDemo : tvgdemo::Demo
         path.cubicTo({center.x + r, center.y + c}, {center.x + c, center.y + r}, {center.x, center.y + r});
         path.cubicTo({center.x - c, center.y + r}, {center.x - r, center.y + c}, {center.x - r, center.y});
         path.cubicTo({center.x - r, center.y - c}, {center.x - c, center.y - r}, {center.x, center.y - r});
+        path.close();
+    }
+
+    void box(RenderPath& path, float x, float y, float w, float h)
+    {
+        path.moveTo({x, y});
+        path.lineTo({x + w, y});
+        path.lineTo({x + w, y + h});
+        path.lineTo({x, y + h});
         path.close();
     }
 
@@ -167,7 +178,7 @@ struct TilesDemo : tvgdemo::Demo
         auto radius = tileSize * 0.28f;
 
         //the operands keep moving, so the whole solve is redone on every frame
-        RenderPath a, b, c;
+        RenderPath a, b, c, d, e;
         star(a, {center.x - radius * 0.3f, center.y - radius * 0.25f}, radius, radius * 0.42f, 5);
         circle(b, {center.x + cosf(angle) * radius * 0.5f, center.y + sinf(angle) * radius * 0.5f}, radius * 0.62f);
         bar(c, {center.x, center.y + cosf(angle) * radius * 0.5f}, tileSize * 0.42f, tileSize * 0.06f);
@@ -184,6 +195,19 @@ struct TilesDemo : tvgdemo::Demo
         //a group accumulates, so a merged result becomes the operand of the next one
         RenderPath tmp;
         if (AddMask(a, b, tmp)) SubtractMask(tmp, c, out[5]);
+
+        /* two boxes on the very same rows. the loop walks them apart, edge to edge
+           and then overlapping - the shared row is what the solver cannot take. */
+        auto gap = (progress < 0.34f) ? tileSize * 0.06f : (progress < 0.67f ? 0.0f : tileSize * -0.005f);
+        auto bx = tileSize * 0.25f, by = tileSize * 0.275f;
+        auto bw = tileSize * 0.25f, bh = tileSize * 0.30f;
+        box(d, bx, by, bw, bh);
+        box(e, bx + bw + gap, by, bw, bh);
+        AddMask(d, e, out[6]);
+
+        //the union already carries the circle's boundary, so subtracting it again overlaps
+        RenderPath again;
+        if (AddMask(a, b, again)) SubtractMask(again, b, out[7]);
 
         auto spent = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - begin).count();
         cost += spent;
@@ -203,6 +227,11 @@ struct TilesDemo : tvgdemo::Demo
             tile.result->appendPath(out[i].cmds.data(), out[i].cmds.size(), out[i].pts.data(), out[i].pts.size());
 
             tile.operands->reset();
+            if (i == 6) {
+                tile.operands->appendPath(d.cmds.data(), d.cmds.size(), d.pts.data(), d.pts.size());
+                tile.operands->appendPath(e.cmds.data(), e.cmds.size(), e.pts.data(), e.pts.size());
+                continue;
+            }
             tile.operands->appendPath(a.cmds.data(), a.cmds.size(), a.pts.data(), a.pts.size());
             tile.operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
         }
