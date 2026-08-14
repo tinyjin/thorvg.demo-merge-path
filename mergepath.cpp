@@ -327,7 +327,7 @@ static void _append(Contour* contour, const Bezier& bezier)
 }
 
 
-static void _build(const RenderPath& path, Inlist<Contour>& out)
+static void _contour(const RenderPath& path, Inlist<Contour>& out)
 {
     auto pts = path.pts.data();
     Contour* contour = nullptr;
@@ -558,7 +558,7 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 }
 
 
-static void _prepare(Inlist<Contour>& path, const Inlist<Contour>& other)
+static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
     INLIST_FOREACH(path, contour) {
         INLIST_FOREACH(contour->segments, segment) {
@@ -614,7 +614,7 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
 }
 
 
-static void _walk(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
+static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
 {
     auto entry = (op == PathOp::Intersect);   //intersect rides the inner pieces
 
@@ -656,7 +656,7 @@ static void _copy(const Contour* contour, bool flip, RenderPath& out)
 }
 
 
-static void _isolated(Inlist<Contour>& path, const Inlist<Contour>& other, PathOp op, bool lhs, RenderPath& out)
+static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, PathOp op, bool lhs, RenderPath& out)
 {
     INLIST_FOREACH(path, contour) {
         auto crossed = false;
@@ -695,21 +695,21 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
 
     Inlist<Contour> a, b;
 
-    _build(lhs, a);
-    _build(rhs, b);
+    _contour(lhs, a);
+    _contour(rhs, b);
     if (a.empty() || b.empty()) return false;
 
     //the operands must share the winding direction
     if (_area(a) * _area(b) < 0.0f) _reverse(b);
 
     if (_intersect(a, b) > 0) {
-        _prepare(a, b);
-        _prepare(b, a);
-        _walk(a, op, out);
+        _mark(a, b);
+        _mark(b, a);
+        _merge(a, op, out);
     }
 
-    _isolated(a, b, op, true, out);
-    _isolated(b, a, op, false, out);
+    _uncrossed(a, b, op, true, out);
+    _uncrossed(b, a, op, false, out);
 
     return true;
 }
