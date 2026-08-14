@@ -279,6 +279,46 @@ static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs,
 /* Path Build                                                           */
 /************************************************************************/
 
+/* the anchors alone, matching the segment level _area(). a path whose anchors
+   are degenerate reports zero on both, so the two never disagree on a sign. */
+static float _area(const RenderPath& path)
+{
+    auto pts = path.pts.data();
+    Point start{}, cur{};
+    auto sum = 0.0f;
+
+    for (auto cmd : path.cmds) {
+        switch (cmd) {
+            case PathCommand::MoveTo: sum += cross(cur, start); start = cur = *pts++; break;
+            case PathCommand::LineTo: sum += cross(cur, *pts); cur = *pts++; break;
+            case PathCommand::CubicTo: sum += cross(cur, pts[2]); cur = pts[2]; pts += 3; break;
+            case PathCommand::Close: sum += cross(cur, start); cur = start; break;
+        }
+    }
+    return 0.5f * (sum + cross(cur, start));
+}
+
+
+static BBox _bounds(const RenderPath& path)
+{
+    BBox box{{FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX}};
+    for (auto& pt : path.pts) {
+        box.min = {fminf(box.min.x, pt.x), fminf(box.min.y, pt.y)};
+        box.max = {fmaxf(box.max.x, pt.x), fmaxf(box.max.y, pt.y)};
+    }
+    return box;
+}
+
+
+//taken as it stands, only the implicit closing the solver would have added is made explicit
+static void _copy(const RenderPath& path, RenderPath& out)
+{
+    out.cmds.insert(out.cmds.end(), path.cmds.begin(), path.cmds.end());
+    out.pts.insert(out.pts.end(), path.pts.begin(), path.pts.end());
+    if (out.cmds.back() != PathCommand::Close) out.close();
+}
+
+
 static void _append(Contour* contour, const Bezier& bezier)
 {
     if (length2(bezier.end - bezier.start) < PATHOP_EPSILON) return;
@@ -605,6 +645,19 @@ static void _walk(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
 }
 
 
+static void _copy(const Contour* contour, bool flip, RenderPath& out)
+{
+    if (flip) {
+        out.moveTo(contour->segments.tail->bezier.end);
+        for (auto segment = contour->segments.tail; segment; segment = segment->prev) _emit(out, segment->bezier.reverse());
+    } else {
+        out.moveTo(contour->segments.head->bezier.start);
+        INLIST_FOREACH(contour->segments, segment) _emit(out, segment->bezier);
+    }
+    out.close();
+}
+
+
 //the contours that never meet the counterpart are taken or dropped as a whole
 static void _isolated(Inlist<Contour>& path, const Inlist<Contour>& other, PathOp op, bool lhs, RenderPath& out)
 {
@@ -625,22 +678,24 @@ static void _isolated(Inlist<Contour>& path, const Inlist<Contour>& other, PathO
             keep = (lhs != inside);
             flip = !lhs;
         }
-        if (!keep) continue;
-
-        if (flip) {
-            out.moveTo(contour->segments.tail->bezier.end);
-            for (auto segment = contour->segments.tail; segment; segment = segment->prev) _emit(out, segment->bezier.reverse());
-        } else {
-            out.moveTo(contour->segments.head->bezier.start);
-            INLIST_FOREACH(contour->segments, segment) _emit(out, segment->bezier);
-        }
-        out.close();
+        if (keep) _copy(contour, flip, out);
     }
 }
 
 
 static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, PathOp op)
 {
+    if (lhs.cmds.empty() || rhs.cmds.empty()) return false;
+
+    //fast path: apart and winding alike
+    if (!_bounds(lhs).intersected(_bounds(rhs), PATHOP_EPSILON) && _area(lhs) * _area(rhs) > 0.0f) {
+        if (op != PathOp::Intersect) {
+            _copy(lhs, out);
+            if (op == PathOp::Add) _copy(rhs, out);
+        }
+        return true;
+    }
+
     Inlist<Contour> a, b;
 
     _build(lhs, a);
@@ -659,7 +714,7 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
     _isolated(a, b, op, true, out);
     _isolated(b, a, op, false, out);
 
-    return !out.cmds.empty();
+    return true;
 }
 
 
