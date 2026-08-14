@@ -98,8 +98,7 @@ struct Bezier : compat::Bezier
 template<typename T>
 struct Inlist : compat::Inlist<T>
 {
-    //the crossings arrive out of order, the list can only append
-    void insert(T* element, T* at)   //before @p at
+    void insert(T* element, T* at)
     {
         if (!at) { this->back(element); return; }
         element->prev = at->prev;
