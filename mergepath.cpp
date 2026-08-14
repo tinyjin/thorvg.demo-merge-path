@@ -564,42 +564,28 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 /* Walk                                                                 */
 /************************************************************************/
 
-static void _emit(RenderPath& out, const Bezier& bezier)
+static void _emit(RenderPath& out, const Bezier& bezier, bool forward)
 {
-    if (bezier.line()) out.lineTo(bezier.end);
-    else out.cubicTo(bezier.ctrl1, bezier.ctrl2, bezier.end);
+    auto bz = forward ? bezier : bezier.reverse();
+    if (bz.line()) out.lineTo(bz.end);
+    else out.cubicTo(bz.ctrl1, bz.ctrl2, bz.end);
 }
 
 
-//emits the curve pieces from @p from up to the next intersection and returns it
+//emits the curve pieces
 static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
 {
-    if (forward) {
-        _emit(out, *from->nextBezier);
-        if (from->next) return from->next;
+    _emit(out, forward ? *from->nextBezier : *from->prevBezier, forward);
+    if (auto hit = forward ? from->next : from->prev) return hit;
 
-        /* the contour is cyclic, so the ride can come back to the segment it started
-           from and stop at an earlier intersection of it. the loop ends by itself,
-           that segment is never empty - it carries @p from at least. */
-        auto segment = from->segment->nextSegment();
-        while (segment->intersections.empty()) {
-            _emit(out, segment->bezier);
-            segment = segment->nextSegment();
-        }
-        _emit(out, *segment->intersections.head->prevBezier);
-        return segment->intersections.head;
-    }
-
-    _emit(out, from->prevBezier->reverse());
-    if (from->prev) return from->prev;
-
-    auto segment = from->segment->prevSegment();
+    auto segment = forward ? from->segment->nextSegment() : from->segment->prevSegment();
     while (segment->intersections.empty()) {
-        _emit(out, segment->bezier.reverse());
-        segment = segment->prevSegment();
+        _emit(out, segment->bezier, forward);
+        segment = forward ? segment->nextSegment() : segment->prevSegment();
     }
-    _emit(out, segment->intersections.tail->nextBezier->reverse());
-    return segment->intersections.tail;
+    auto hit = forward ? segment->intersections.head : segment->intersections.tail;
+    _emit(out, forward ? *hit->prevBezier : *hit->nextBezier, forward);
+    return hit;
 }
 
 
@@ -636,10 +622,10 @@ static void _copy(const Contour* contour, bool flip, RenderPath& out)
 {
     if (flip) {
         out.moveTo(contour->segments.tail->bezier.end);
-        for (auto segment = contour->segments.tail; segment; segment = segment->prev) _emit(out, segment->bezier.reverse());
+        for (auto segment = contour->segments.tail; segment; segment = segment->prev) _emit(out, segment->bezier, false);
     } else {
         out.moveTo(contour->segments.head->bezier.start);
-        INLIST_FOREACH(contour->segments, segment) _emit(out, segment->bezier);
+        INLIST_FOREACH(contour->segments, segment) _emit(out, segment->bezier, true);
     }
     out.close();
 }
