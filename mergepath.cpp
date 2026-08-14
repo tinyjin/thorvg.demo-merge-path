@@ -194,7 +194,7 @@ Segment* Segment::prevSegment() { return prev ? prev : parent->segments.tail; }
 
 struct Root
 {
-    float t, u;
+    float t, u; // lhs(t) = rhs(u)
 };
 
 }
