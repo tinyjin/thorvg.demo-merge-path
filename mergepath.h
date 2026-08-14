@@ -313,6 +313,16 @@ static uint32_t _roots(float a, float b, float c, float d, float* out)
 {
     uint32_t cnt = 0;
 
+    /* a line carried as a cubic cancels its two leading terms, but only down to the
+       float noise. the degree has to be judged relative to the coefficients, an
+       absolute epsilon would take the cubic branch on a residual and blow up. */
+    auto scale = fmaxf(fmaxf(fabsf(a), fabsf(b)), fmaxf(fabsf(c), fabsf(d)));
+    if (scale < FLT_MIN) return 0;
+    a /= scale;
+    b /= scale;
+    c /= scale;
+    d /= scale;
+
     if (fabsf(a) < PATHOP_EPSILON) {
         if (fabsf(b) < PATHOP_EPSILON) {
             if (fabsf(c) < PATHOP_EPSILON) return 0;
@@ -653,11 +663,13 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
         _emit(out, *from->nextBezier);
         if (from->next) return from->next;
 
+        /* the contour is cyclic, so the ride can come back to the segment it started
+           from and stop at an earlier intersection of it. the loop ends by itself,
+           that segment is never empty - it carries @p from at least. */
         auto segment = from->segment->nextSegment();
         while (segment->intersections.empty()) {
             _emit(out, segment->bezier);
             segment = segment->nextSegment();
-            if (segment == from->segment) return nullptr;
         }
         _emit(out, *segment->intersections.head->prevBezier);
         return segment->intersections.head;
@@ -670,7 +682,6 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
     while (segment->intersections.empty()) {
         _emit(out, segment->bezier.reverse());
         segment = segment->prevSegment();
-        if (segment == from->segment) return nullptr;
     }
     _emit(out, segment->intersections.tail->nextBezier->reverse());
     return segment->intersections.tail;
