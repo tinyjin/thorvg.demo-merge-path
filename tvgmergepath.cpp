@@ -213,13 +213,161 @@ struct UserDemo : tvgdemo::Demo
 
 
 /************************************************************************/
+/* Stress Contents                                                      */
+/************************************************************************/
+
+/* every operand is built out of cubics only and the merges are accumulated, so a
+   frame runs count-1 boolean operations on curves that never stop moving. */
+struct StressDemo : tvgdemo::Demo
+{
+    uint32_t count;
+
+    Shape* result = nullptr;
+    Shape* operands = nullptr;
+    Text* label = nullptr;
+    Point center{};
+    float radius = 0.0f;
+
+    double cost = 0.0;
+    uint32_t costCnt = 0;
+    uint32_t reported = 0;
+
+    StressDemo(uint32_t count) : count(count) {}
+
+    //a closed cubic path through the sampled points
+    void smooth(RenderPath& path, const vector<Point>& pts)
+    {
+        auto cnt = pts.size();
+        path.moveTo(pts[0]);
+        for (size_t i = 0; i < cnt; ++i) {
+            auto& p0 = pts[(i + cnt - 1) % cnt];
+            auto& p1 = pts[i];
+            auto& p2 = pts[(i + 1) % cnt];
+            auto& p3 = pts[(i + 2) % cnt];
+            path.cubicTo(p1 + (p2 - p0) * (1.0f / 6.0f), p2 - (p3 - p1) * (1.0f / 6.0f), p2);
+        }
+        path.close();
+    }
+
+    void blob(RenderPath& path, const Point& center, float r, float phase)
+    {
+        vector<Point> pts;
+        for (uint32_t i = 0; i < 10; ++i) {
+            auto t = float(i) * 2.0f * float(M_PI) / 10.0f;
+            auto rr = r * (1.0f + 0.24f * sinf(t * 3.0f + phase) + 0.14f * cosf(t * 2.0f - phase * 1.7f));
+            pts.push_back({center.x + cosf(t) * rr, center.y + sinf(t) * rr});
+        }
+        smooth(path, pts);
+    }
+
+    bool content(Canvas* canvas, uint32_t w, uint32_t h) override
+    {
+        center = {float(w) * 0.5f, float(h) * 0.5f};
+        radius = std::min(float(w), float(h)) * 0.5f;
+
+        auto bg = Shape::gen();
+        bg->appendRect(0.0f, 0.0f, float(w), float(h));
+        bg->fill(255, 255, 255);
+        canvas->add(bg);
+
+        result = Shape::gen();
+        result->fill(60, 140, 240);
+        result->fillRule(FillRule::NonZero);
+        result->strokeWidth(1.5f);
+        result->strokeFill(20, 40, 90);
+        canvas->add(result);
+
+        operands = Shape::gen();
+        operands->strokeWidth(1.0f);
+        operands->strokeFill(150, 155, 165, 90);
+        canvas->add(operands);
+
+        if (Text::load(fontFile) == Result::Success) {
+            label = Text::gen();
+            label->font("PublicSans-Regular");
+            label->size(radius * 0.038f);
+            label->fill(70, 75, 85);
+            label->translate(radius * 0.05f, float(h) - radius * 0.1f);
+            canvas->add(label);
+        }
+
+        return update(canvas, 0);
+    }
+
+    bool update(Canvas* canvas, uint32_t elapsed) override
+    {
+        auto progress = float(elapsed % 8000) / 8000.0f;
+        auto spin = progress * 2.0f * float(M_PI);
+
+        vector<RenderPath> blobs(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            auto t = float(i) * 2.0f * float(M_PI) / float(count) + spin;
+            auto orbit = radius * (0.34f + 0.12f * sinf(spin * 2.0f + float(i)));
+            blob(blobs[i], {center.x + cosf(t) * orbit, center.y + sinf(t) * orbit}, radius * 0.26f, spin * 1.3f + float(i));
+        }
+
+        auto begin = chrono::high_resolution_clock::now();
+
+        //accumulate, the merged result becomes the operand of the next merge
+        RenderPath acc = blobs[0];
+        for (uint32_t i = 1; i < count; ++i) {
+            RenderPath next;
+            if (!AddMask(acc, blobs[i], next)) continue;
+            acc = next;
+        }
+
+        auto spent = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - begin).count();
+        cost += spent;
+        ++costCnt;
+
+        result->reset();
+        result->appendPath(acc.cmds.data(), acc.cmds.size(), acc.pts.data(), acc.pts.size());
+
+        operands->reset();
+        for (auto& b : blobs) operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
+
+        uint32_t cubics = 0;
+        for (auto cmd : acc.cmds) {
+            if (cmd == PathCommand::CubicTo) ++cubics;
+
+        }
+
+        if (label) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "%u blobs, %u merges  |  %u cubics out  |  %.2f ms", count, count - 1, cubics, spent);
+            label->text(buf);
+        }
+
+        if (traceCost && elapsed / 1000 > reported) {
+            reported = elapsed / 1000;
+            printf("stress: %.3f ms / frame (%u merges, %u cubics out)\n", cost / costCnt, count - 1, cubics);
+            cost = 0.0;
+            costCnt = 0;
+        }
+
+        canvas->update();
+
+        return true;
+    }
+};
+
+
+/************************************************************************/
 /* Entry Point                                                          */
 /************************************************************************/
 
 int main(int argc, char **argv)
 {
+    auto stress = 0;
+
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t")) traceCost = true;
+        else if (!strcmp(argv[i], "-s")) stress = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 12;
+    }
+
+    if (stress > 0) {
+        printf("stress: a union of %d curve blobs, accumulated over %d merges\n", stress, stress - 1);
+        return tvgdemo::main(new StressDemo(uint32_t(stress)), argc, argv, true, 900, 900, 0);
     }
 
     printf("tiles: Merge | Add | Subtract  /  Intersect | Exclude | Add then Subtract\n");
