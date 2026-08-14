@@ -223,7 +223,7 @@ struct Bezier
 namespace {
 
 constexpr float PATHOP_EPSILON = 1e-5f;
-constexpr float PATHOP_TOLERANCE = 1e-3f;   //curve isolation, in path units
+constexpr float PATHOP_TOLERANCE = 0.05f;   //curve isolation. it only has to separate the roots, _refine locates them
 constexpr uint32_t PATHOP_DEPTH = 24;
 constexpr size_t PATHOP_OVERLAP = 6;      //root count that reveals an overlap, not crossings
 
