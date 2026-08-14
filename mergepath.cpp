@@ -225,9 +225,7 @@ static void _refine(const Bezier& lhs, const Bezier& rhs, Root& root)
 }
 
 
-/* isolates the crossings by subdividing until both pieces are flat enough to be
-   solved as lines. the curves themselves are never replaced, only the search is
-   linearized, so the output keeps the original geometry. */
+//bezier subdivision
 static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs, float rt0, float rt1, uint32_t depth, vector<Root>& roots)
 {
     auto lbox = lhs.bounds();
@@ -658,7 +656,6 @@ static void _copy(const Contour* contour, bool flip, RenderPath& out)
 }
 
 
-//the contours that never meet the counterpart are taken or dropped as a whole
 static void _isolated(Inlist<Contour>& path, const Inlist<Contour>& other, PathOp op, bool lhs, RenderPath& out)
 {
     INLIST_FOREACH(path, contour) {
