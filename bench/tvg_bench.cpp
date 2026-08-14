@@ -61,7 +61,7 @@ static double area(const RenderPath& path)
         if (cmd == PathCommand::MoveTo) { flush(); start = cur = *p++; pts.push_back(cur); }
         else if (cmd == PathCommand::LineTo) { cur = *p++; pts.push_back(cur); }
         else if (cmd == PathCommand::CubicTo) {
-            Bezier bz{cur, p[0], p[1], p[2]};
+            compat::Bezier bz{cur, p[0], p[1], p[2]};
             for (uint32_t i = 1; i <= 64; ++i) pts.push_back(bz.at(float(i) / 64.0f));
             cur = p[2];
             p += 3;

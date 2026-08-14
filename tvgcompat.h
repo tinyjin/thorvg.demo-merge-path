@@ -83,6 +83,11 @@ static inline Point lerp(const Point& start, const Point& end, float t) { return
 #define INLIST_FOREACH(inlist, cur) \
     for (auto cur = inlist.head; cur; cur = cur->next)
 
+#define INLIST_SAFE_FOREACH(inlist, cur) \
+    auto cur = inlist.head; \
+    auto next = cur ? cur->next : nullptr; \
+    for (; cur; cur = next, next = (cur ? cur->next : nullptr))
+
 
 //the types that tvgextend.h derives from
 namespace compat
@@ -172,6 +177,40 @@ struct Inlist
             element->prev = element->next = nullptr;
         }
         ++count;
+    }
+
+    void front(T* element)
+    {
+        if (head) {
+            head->prev = element;
+            element->prev = nullptr;
+            element->next = head;
+            head = element;
+        } else {
+            head = tail = element;
+            element->prev = element->next = nullptr;
+        }
+        ++count;
+    }
+
+    T* front()
+    {
+        if (!head) return nullptr;
+        --count;
+        auto t = head;
+        head = t->next;
+        if (!head) tail = nullptr;
+        return t;
+    }
+
+    void remove(T* element)
+    {
+        if (element->prev) element->prev->next = element->next;
+        if (element->next) element->next->prev = element->prev;
+        if (element == head) head = element->next;
+        if (element == tail) tail = element->prev;
+        element->prev = element->next = nullptr;
+        --count;
     }
 
     bool empty() const { return head ? false : true; }
