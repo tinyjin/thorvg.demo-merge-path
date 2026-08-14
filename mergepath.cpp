@@ -131,7 +131,7 @@ struct Intersection
     INLIST_ITEM(Intersection);
 
     Segment* segment = nullptr;
-    Intersection* pairedIntersection = nullptr;
+    Intersection* paired = nullptr;
     float t = 0.0f;
     Bezier* prevBezier = nullptr;
     Bezier* nextBezier = nullptr;
@@ -482,11 +482,11 @@ static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
     auto b = new Intersection;
 
     a->segment = lhs;
-    a->pairedIntersection = b;
+    a->paired = b;
     a->t = lt;
 
     b->segment = rhs;
-    b->pairedIntersection = a;
+    b->paired = a;
     b->t = rt;
 
     lhs->sort(a);
@@ -604,7 +604,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                     auto next = _advance(out, cur, forward);
                     if (!next) break;
                     next->visited = true;
-                    cur = next->pairedIntersection;
+                    cur = next->paired;
                     //the subtracted operand is walked backwards, its boundary is carved out
                     if (op == PathOp::Subtract) forward = !forward;
                 }
