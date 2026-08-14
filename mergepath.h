@@ -30,6 +30,11 @@
 using namespace std;
 using namespace tvg;
 
+
+/************************************************************************/
+/* tvgRender.h counterparts                                             */
+/************************************************************************/
+
 struct RenderPath
 {
     vector<tvg::PathCommand> cmds;
@@ -43,6 +48,66 @@ struct RenderPath
 
 
 /************************************************************************/
+/* tvgInlist.h counterparts                                             */
+/************************************************************************/
+
+#define INLIST_ITEM(T) \
+    T* prev; \
+    T* next
+
+template<typename T>
+struct Inlist
+{
+    T* head = nullptr;
+    T* tail = nullptr;
+    uint32_t count = 0;
+
+    ~Inlist() { free(); }
+
+    void free()
+    {
+        while (head) {
+            auto t = head;
+            head = t->next;
+            delete(t);
+        }
+        head = tail = nullptr;
+        count = 0;
+    }
+
+    void back(T* element)
+    {
+        if (tail) {
+            tail->next = element;
+            element->prev = tail;
+            element->next = nullptr;
+            tail = element;
+        } else {
+            head = tail = element;
+            element->prev = element->next = nullptr;
+        }
+        ++count;
+    }
+
+    void insert(T* element, T* at)   //before @p at
+    {
+        if (!at) { back(element); return; }
+        element->prev = at->prev;
+        element->next = at;
+        if (at->prev) at->prev->next = element;
+        else head = element;
+        at->prev = element;
+        ++count;
+    }
+
+    bool empty() const { return head ? false : true; }
+};
+
+#define INLIST_FOREACH(inlist, cur) \
+    for (auto cur = inlist.head; cur; cur = cur->next)
+
+
+/************************************************************************/
 /* tvgMath.h counterparts                                               */
 /************************************************************************/
 
@@ -53,11 +118,21 @@ static inline Point operator+(const Point& lhs, const Point& rhs) { return {lhs.
 static inline Point operator*(const Point& lhs, float rhs) { return {lhs.x * rhs, lhs.y * rhs}; }
 static inline bool operator==(const Point& lhs, const Point& rhs) { return lhs.x == rhs.x && lhs.y == rhs.y; }
 static inline float dot(const Point& lhs, const Point& rhs) { return lhs.x * rhs.x + lhs.y * rhs.y; }
+static inline float cross(const Point& lhs, const Point& rhs) { return lhs.x * rhs.y - lhs.y * rhs.x; }
 static inline float length2(const Point& a) { return a.x * a.x + a.y * a.y; }
+static inline float length(const Point& a) { return sqrtf(length2(a)); }
 static inline Point lerp(const Point& start, const Point& end, float t) { return start + (end - start) * t; }
 
-//the operands are snapped onto a grid, which keeps this product exact in double
-static inline double cross(const Point& lhs, const Point& rhs) { return (double)lhs.x * rhs.y - (double)lhs.y * rhs.x; }
+struct BBox
+{
+    Point min, max;
+
+    bool intersected(const BBox& rhs, float tolerance) const
+    {
+        return !(max.x + tolerance < rhs.min.x || rhs.max.x + tolerance < min.x ||
+                 max.y + tolerance < rhs.min.y || rhs.max.y + tolerance < min.y);
+    }
+};
 
 struct Bezier
 {
@@ -72,6 +147,15 @@ struct Bezier
         return a * it + b * t;
     }
 
+    Point tangent(float t) const
+    {
+        auto it = 1.0f - t;
+        auto a = (ctrl1 - start) * (3.0f * it * it);
+        auto b = (ctrl2 - ctrl1) * (6.0f * it * t);
+        auto c = (end - ctrl2) * (3.0f * t * t);
+        return a + b + c;
+    }
+
     void split(Bezier& left, Bezier& right) const
     {
         auto c = lerp(ctrl1, ctrl2, 0.5f);
@@ -84,25 +168,50 @@ struct Bezier
         left.end = right.start = lerp(left.ctrl2, right.ctrl1, 0.5f);
     }
 
+    //the piece between the two parameters
+    Bezier sub(float t0, float t1) const
+    {
+        auto u0 = 1.0f - t0, u1 = 1.0f - t1;
+        Bezier out;
+        out.start = start * (u0 * u0 * u0) + ctrl1 * (3.0f * t0 * u0 * u0) + ctrl2 * (3.0f * t0 * t0 * u0) + end * (t0 * t0 * t0);
+        out.ctrl1 = start * (u0 * u0 * u1) + ctrl1 * (2.0f * t0 * u0 * u1 + u0 * u0 * t1) + ctrl2 * (t0 * t0 * u1 + 2.0f * u0 * t0 * t1) + end * (t0 * t0 * t1);
+        out.ctrl2 = start * (u0 * u1 * u1) + ctrl1 * (t0 * u1 * u1 + 2.0f * u0 * u1 * t1) + ctrl2 * (2.0f * t0 * t1 * u1 + u0 * t1 * t1) + end * (t0 * t1 * t1);
+        out.end = start * (u1 * u1 * u1) + ctrl1 * (3.0f * t1 * u1 * u1) + ctrl2 * (3.0f * t1 * t1 * u1) + end * (t1 * t1 * t1);
+        return out;
+    }
+
+    Bezier reverse() const
+    {
+        return {end, ctrl2, ctrl1, start};
+    }
+
+    BBox bounds() const
+    {
+        BBox box;
+        box.min = {fminf(fminf(start.x, ctrl1.x), fminf(ctrl2.x, end.x)), fminf(fminf(start.y, ctrl1.y), fminf(ctrl2.y, end.y))};
+        box.max = {fmaxf(fmaxf(start.x, ctrl1.x), fmaxf(ctrl2.x, end.x)), fmaxf(fmaxf(start.y, ctrl1.y), fmaxf(ctrl2.y, end.y))};
+        return box;
+    }
+
     bool flatten(float tolerance) const
     {
         auto diff1 = Point{fabsf(ctrl1.x * 3.0f - start.x * 2.0f - end.x), fabsf(ctrl1.y * 3.0f - start.y * 2.0f - end.y)};
         auto diff2 = Point{fabsf(ctrl2.x * 3.0f - end.x * 2.0f - start.x), fabsf(ctrl2.y * 3.0f - end.y * 2.0f - start.y)};
-        return (max(diff1.x, diff2.x) + max(diff1.y, diff2.y)) <= tolerance;
+        return (fmaxf(diff1.x, diff2.x) + fmaxf(diff1.y, diff2.y)) <= tolerance;
     }
 
-    uint32_t segments(float scale = 1.0f) const
+    //the control points sit on the chord, so it can be emitted as a line
+    bool line() const
     {
-        return _segments(*this, 0.5f / scale, 0);
+        auto chord = end - start;
+        auto leng = length(chord);
+        if (leng < 1e-6f) return true;
+        return fabsf(cross(chord, ctrl1 - start)) / leng < 1e-3f && fabsf(cross(chord, ctrl2 - start)) / leng < 1e-3f;
     }
 
-private:
-    static uint32_t _segments(const Bezier& bz, float tolerance, uint32_t depth)
+    static Bezier line(const Point& start, const Point& end)
     {
-        if (depth >= 10 || bz.flatten(tolerance)) return 1;
-        Bezier left, right;
-        bz.split(left, right);
-        return _segments(left, tolerance, depth + 1) + _segments(right, tolerance, depth + 1);
+        return {start, lerp(start, end, 1.0f / 3.0f), lerp(start, end, 2.0f / 3.0f), end};
     }
 };
 
@@ -113,316 +222,545 @@ private:
 
 namespace {
 
-//the sw rasterizer quantizes to 1/256 px (tvgSwRle.cpp PIXEL_BITS), match its grid
-constexpr float PATHOP_PRECISION = 256.0f;
+constexpr float PATHOP_EPSILON = 1e-5f;
+constexpr float PATHOP_TOLERANCE = 1e-3f;   //curve isolation, in path units
+constexpr uint32_t PATHOP_DEPTH = 24;
+constexpr size_t PATHOP_OVERLAP = 6;      //root count that reveals an overlap, not crossings
 
 enum class PathOp : uint8_t { Add = 0, Intersect, Subtract };
 
-struct Edge
-{
-    Point pt1, pt2;
-    bool used = false;
+struct Segment;
 
-    Point mid() const { return (pt1 + pt2) * 0.5f; }
-    Point dir() const { return pt2 - pt1; }
-    void reverse() { auto tmp = pt1; pt1 = pt2; pt2 = tmp; }
+struct Intersection
+{
+    INLIST_ITEM(Intersection);
+
+    Segment* segment = nullptr;
+    Segment* pairedSegment = nullptr;
+    Intersection* pairedIntersection = nullptr;
+    float t = 0.0f;
+    Bezier* prevBezier = nullptr;
+    Bezier* nextBezier = nullptr;
+    bool inOut{};       //the piece right after this point lies inside the counterpart
+    bool visited{};
+
+    ~Intersection()
+    {
+        delete(prevBezier);
+        delete(nextBezier);
+    }
 };
 
-struct Cut
+struct Segment
 {
-    float t;
-    Point pt;
+    INLIST_ITEM(Segment);
+
+    Bezier bezier;
+    Inlist<Segment>* parent = nullptr;
+    Inlist<Intersection> intersections;
+
+    //keeps the intersections ordered along the curve
+    void sort(Intersection* is)
+    {
+        INLIST_FOREACH(intersections, cur) {
+            if (cur->t > is->t) {
+                intersections.insert(is, cur);
+                return;
+            }
+        }
+        intersections.back(is);
+    }
+
+    //hands each intersection the curve pieces on both sides
+    void split()
+    {
+        INLIST_FOREACH(intersections, cur) {
+            auto from = cur->prev ? cur->prev->t : 0.0f;
+            auto to = cur->next ? cur->next->t : 1.0f;
+            cur->prevBezier = new Bezier(bezier.sub(from, cur->t));
+            cur->nextBezier = new Bezier(bezier.sub(cur->t, to));
+        }
+    }
+
+    Segment* nextSegment() { return next ? next : parent->head; }
+    Segment* prevSegment() { return prev ? prev : parent->tail; }
+};
+
+struct Path
+{
+    vector<Inlist<Segment>*> contours;
+
+    ~Path()
+    {
+        for (auto contour : contours) delete(contour);
+    }
+};
+
+struct Root
+{
+    float t, u;
 };
 
 }
 
 
-/* snapping every point onto the grid turns the coincidence into a plain equality
-   test instead of a tolerance guess. the error is bounded by a half grid cell,
-   far below the curve flattening error that is already accepted. */
-static Point _snap(const Point& pt, float precision)
+/************************************************************************/
+/* Curve Math                                                           */
+/************************************************************************/
+
+//real roots of a t^3 + b t^2 + c t + d within [0, 1)
+static uint32_t _roots(float a, float b, float c, float d, float* out)
 {
-    return {roundf(pt.x * precision) / precision, roundf(pt.y * precision) / precision};
+    uint32_t cnt = 0;
+
+    if (fabsf(a) < PATHOP_EPSILON) {
+        if (fabsf(b) < PATHOP_EPSILON) {
+            if (fabsf(c) < PATHOP_EPSILON) return 0;
+            out[cnt] = -d / c;
+            if (out[cnt] >= 0.0f && out[cnt] < 1.0f) ++cnt;
+            return cnt;
+        }
+        auto disc = c * c - 4.0f * b * d;
+        if (disc < 0.0f) return 0;
+        disc = sqrtf(disc);
+        for (auto s : {(-c + disc) / (2.0f * b), (-c - disc) / (2.0f * b)}) {
+            if (s >= 0.0f && s < 1.0f) out[cnt++] = s;
+        }
+        return cnt;
+    }
+
+    auto p = b / a, q = c / a, r = d / a;
+    auto Q = (3.0f * q - p * p) / 9.0f;
+    auto R = (9.0f * p * q - 27.0f * r - 2.0f * p * p * p) / 54.0f;
+    auto D = Q * Q * Q + R * R;
+
+    if (D >= 0.0f) {
+        auto sd = sqrtf(D);
+        auto s = cbrtf(R + sd);
+        auto t = cbrtf(R - sd);
+        auto x = s + t - p / 3.0f;
+        if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
+        if (fabsf(D) < PATHOP_EPSILON) {   //repeated root
+            x = -0.5f * (s + t) - p / 3.0f;
+            if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
+        }
+    } else {
+        auto theta = acosf(R / sqrtf(-Q * Q * Q));
+        auto m = 2.0f * sqrtf(-Q);
+        for (uint32_t i = 0; i < 3; ++i) {
+            auto x = m * cosf((theta + float(i) * 2.0f * float(M_PI)) / 3.0f) - p / 3.0f;
+            if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
+        }
+    }
+    return cnt;
 }
 
 
-static void _pushEdge(vector<Edge>& edges, const Point& pt1, const Point& pt2)
+//the parameters where the curve crosses the horizontal line
+static uint32_t _crossings(const Bezier& bz, float y, float* out)
 {
-    if (!(pt1 == pt2)) edges.push_back({pt1, pt2});
+    auto d0 = bz.start.y - y, d1 = bz.ctrl1.y - y, d2 = bz.ctrl2.y - y, d3 = bz.end.y - y;
+    return _roots(-d0 + 3.0f * d1 - 3.0f * d2 + d3, 3.0f * d0 - 6.0f * d1 + 3.0f * d2, -3.0f * d0 + 3.0f * d1, d0, out);
 }
 
 
-//flattens the path into a set of edges. every contour is implicitly closed.
-static void _collect(const RenderPath& path, vector<Edge>& edges, float scale, float precision)
+//refines a crossing on the intact curves, the isolation is only a seed
+static void _refine(const Bezier& lhs, const Bezier& rhs, Root& root)
+{
+    for (uint32_t i = 0; i < 8; ++i) {
+        auto diff = lhs.at(root.t) - rhs.at(root.u);
+        if (length2(diff) < PATHOP_EPSILON * PATHOP_EPSILON) return;
+
+        auto dl = lhs.tangent(root.t);
+        auto dr = rhs.tangent(root.u);
+        auto det = cross(dl, dr) * -1.0f;
+        if (fabsf(det) < PATHOP_EPSILON) return;
+
+        root.t -= (diff.x * -dr.y - diff.y * -dr.x) / det;
+        root.u -= (dl.x * diff.y - dl.y * diff.x) / det;
+        root.t = fmaxf(0.0f, fminf(1.0f, root.t));
+        root.u = fmaxf(0.0f, fminf(1.0f, root.u));
+    }
+}
+
+
+/* isolates the crossings by subdividing until both pieces are flat enough to be
+   solved as lines. the curves themselves are never replaced, only the search is
+   linearized, so the output keeps the original geometry. */
+static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs, float rt0, float rt1, uint32_t depth, vector<Root>& roots)
+{
+    auto lbox = lhs.bounds();
+    if (!lbox.intersected(rhs.bounds(), PATHOP_TOLERANCE)) return;
+
+    auto lflat = lhs.flatten(PATHOP_TOLERANCE);
+    auto rflat = rhs.flatten(PATHOP_TOLERANCE);
+
+    if (depth >= PATHOP_DEPTH || (lflat && rflat)) {
+        auto r = lhs.end - lhs.start;
+        auto s = rhs.end - rhs.start;
+        auto denom = cross(r, s);
+        if (fabsf(denom) < PATHOP_EPSILON * PATHOP_EPSILON) return;
+
+        auto qp = rhs.start - lhs.start;
+        auto t = cross(qp, s) / denom;
+        auto u = cross(qp, r) / denom;
+        if (t < -PATHOP_EPSILON || t > 1.0f + PATHOP_EPSILON) return;
+        if (u < -PATHOP_EPSILON || u > 1.0f + PATHOP_EPSILON) return;
+
+        roots.push_back({lt0 + (lt1 - lt0) * fmaxf(0.0f, fminf(1.0f, t)), rt0 + (rt1 - rt0) * fmaxf(0.0f, fminf(1.0f, u))});
+        return;
+    }
+
+    Bezier ll, lr, rl, rr;
+    auto lmid = (lt0 + lt1) * 0.5f;
+    auto rmid = (rt0 + rt1) * 0.5f;
+
+    if (lflat) {
+        rhs.split(rl, rr);
+        _isolate(lhs, lt0, lt1, rl, rt0, rmid, depth + 1, roots);
+        _isolate(lhs, lt0, lt1, rr, rmid, rt1, depth + 1, roots);
+    } else if (rflat) {
+        lhs.split(ll, lr);
+        _isolate(ll, lt0, lmid, rhs, rt0, rt1, depth + 1, roots);
+        _isolate(lr, lmid, lt1, rhs, rt0, rt1, depth + 1, roots);
+    } else {
+        lhs.split(ll, lr);
+        rhs.split(rl, rr);
+        _isolate(ll, lt0, lmid, rl, rt0, rmid, depth + 1, roots);
+        _isolate(ll, lt0, lmid, rr, rmid, rt1, depth + 1, roots);
+        _isolate(lr, lmid, lt1, rl, rt0, rmid, depth + 1, roots);
+        _isolate(lr, lmid, lt1, rr, rmid, rt1, depth + 1, roots);
+    }
+}
+
+
+/************************************************************************/
+/* Path Build                                                           */
+/************************************************************************/
+
+static void _append(Inlist<Segment>* contour, const Bezier& bezier)
+{
+    if (length2(bezier.end - bezier.start) < PATHOP_EPSILON) return;
+    auto segment = new Segment;
+    segment->bezier = bezier;
+    segment->parent = contour;
+    contour->back(segment);
+}
+
+
+static void _build(const RenderPath& path, Path& out)
 {
     auto pts = path.pts.data();
+    Inlist<Segment>* contour = nullptr;
     Point start{}, cur{};
-    auto opened = false;
-
-    edges.reserve(edges.size() + path.pts.size() * 2);
 
     for (auto cmd : path.cmds) {
         switch (cmd) {
             case PathCommand::MoveTo: {
-                if (opened) _pushEdge(edges, cur, start);
-                start = cur = _snap(*pts++, precision);
-                opened = true;
+                if (contour) _append(contour, Bezier::line(cur, start));
+                contour = new Inlist<Segment>;
+                out.contours.push_back(contour);
+                start = cur = *pts++;
                 break;
             }
             case PathCommand::LineTo: {
-                auto to = _snap(*pts++, precision);
-                _pushEdge(edges, cur, to);
-                cur = to;
+                if (contour) _append(contour, Bezier::line(cur, *pts));
+                cur = *pts++;
                 break;
             }
             case PathCommand::CubicTo: {
-                Bezier bz{cur, pts[0], pts[1], pts[2]};
-                auto cnt = bz.segments(scale);
-                auto step = 1.0f / cnt;
-                for (uint32_t i = 1; i <= cnt; ++i) {
-                    auto to = _snap((i == cnt) ? bz.end : bz.at(step * i), precision);
-                    _pushEdge(edges, cur, to);
-                    cur = to;
-                }
+                if (contour) _append(contour, {cur, pts[0], pts[1], pts[2]});
+                cur = pts[2];
                 pts += 3;
                 break;
             }
             case PathCommand::Close: {
-                if (opened) _pushEdge(edges, cur, start);
+                if (contour) _append(contour, Bezier::line(cur, start));
                 cur = start;
-                opened = false;
                 break;
             }
         }
     }
-    if (opened) _pushEdge(edges, cur, start);
+    if (contour) _append(contour, Bezier::line(cur, start));
+
+    //drop the contours that carry no area
+    for (auto it = out.contours.begin(); it != out.contours.end();) {
+        if ((*it)->count < 2) { delete(*it); it = out.contours.erase(it); }
+        else ++it;
+    }
 }
 
 
-static double _area(const vector<Edge>& edges)
+static float _area(const Path& path)
 {
-    auto sum = 0.0;
-    for (auto& e : edges) sum += cross(e.pt1, e.pt2);
-    return 0.5 * sum;
+    auto sum = 0.0f;
+    for (auto contour : path.contours) {
+        INLIST_FOREACH((*contour), segment) sum += cross(segment->bezier.start, segment->bezier.end);
+    }
+    return 0.5f * sum;
 }
 
 
-static int32_t _winding(const vector<Edge>& edges, const Point& pt)
+static void _reverse(Path& path)
+{
+    for (auto contour : path.contours) {
+        Inlist<Segment> reversed;
+        while (contour->head) {
+            auto segment = contour->head;
+            contour->head = segment->next;
+            segment->bezier = segment->bezier.reverse();
+            segment->prev = segment->next = nullptr;
+            reversed.count = 0;
+            //push front to flip the order
+            if (reversed.head) {
+                segment->next = reversed.head;
+                reversed.head->prev = segment;
+                reversed.head = segment;
+            } else reversed.head = reversed.tail = segment;
+        }
+        contour->head = reversed.head;
+        contour->tail = reversed.tail;
+        reversed.head = reversed.tail = nullptr;
+        contour->count = 0;
+        INLIST_FOREACH((*contour), segment) ++contour->count;
+    }
+}
+
+
+static int32_t _winding(const Path& path, const Point& pt)
 {
     int32_t winding = 0;
+    float ts[3];
 
-    for (auto& e : edges) {
-        if (e.pt1.y <= pt.y) {
-            if (e.pt2.y > pt.y && cross(e.dir(), pt - e.pt1) > 0.0) ++winding;
-        } else if (e.pt2.y <= pt.y && cross(e.dir(), pt - e.pt1) < 0.0) --winding;
+    for (auto contour : path.contours) {
+        INLIST_FOREACH((*contour), segment) {
+            auto& bz = segment->bezier;
+            auto cnt = _crossings(bz, pt.y, ts);
+            for (uint32_t i = 0; i < cnt; ++i) {
+                if (bz.at(ts[i]).x <= pt.x) continue;
+                auto dir = bz.tangent(ts[i]).y;
+                if (dir > 0.0f) ++winding;
+                else if (dir < 0.0f) --winding;
+            }
+        }
     }
     return winding;
 }
 
 
-//both operands have to be cut at the very same point, so the evaluation order is
-//decided by the edges themselves, not by which side is being split.
-static bool _prior(const Edge& lhs, const Edge& rhs)
+/************************************************************************/
+/* Intersection                                                         */
+/************************************************************************/
+
+static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
 {
-    if (lhs.pt1.x != rhs.pt1.x) return lhs.pt1.x < rhs.pt1.x;
-    if (lhs.pt1.y != rhs.pt1.y) return lhs.pt1.y < rhs.pt1.y;
-    if (lhs.pt2.x != rhs.pt2.x) return lhs.pt2.x < rhs.pt2.x;
-    return lhs.pt2.y < rhs.pt2.y;
+    auto a = new Intersection;
+    auto b = new Intersection;
+
+    a->segment = lhs;
+    a->pairedSegment = rhs;
+    a->pairedIntersection = b;
+    a->t = lt;
+
+    b->segment = rhs;
+    b->pairedSegment = lhs;
+    b->pairedIntersection = a;
+    b->t = rt;
+
+    lhs->sort(a);
+    rhs->sort(b);
 }
 
 
-static bool _crossing(const Edge& lhs, const Edge& rhs, Point& out, float precision)
+static bool _duplicated(const vector<Root>& roots, const Root& root)
 {
-    auto r = lhs.dir();
-    auto s = rhs.dir();
-    auto denom = cross(r, s);
-    if (denom == 0.0) return false;
-
-    auto qp = rhs.pt1 - lhs.pt1;
-    auto tn = cross(qp, s);
-    auto un = cross(qp, r);
-    if (denom < 0.0) {
-        denom = -denom;
-        tn = -tn;
-        un = -un;
+    for (auto& r : roots) {
+        if (fabsf(r.t - root.t) < 1e-3f && fabsf(r.u - root.u) < 1e-3f) return true;
     }
-    if (tn < 0.0 || tn > denom || un < 0.0 || un > denom) return false;
-
-    auto t = tn / denom;
-    out = _snap({lhs.pt1.x + float(r.x * t), lhs.pt1.y + float(r.y * t)}, precision);
-
-    return true;
+    return false;
 }
 
 
-static void _cut(vector<Cut>& cuts, const Edge& edge, const Point& pt)
+static uint32_t _intersect(Path& lhs, Path& rhs)
 {
-    auto t = dot(pt - edge.pt1, edge.dir()) / length2(edge.dir());
-    if (t <= 0.0f || t >= 1.0f) return;
+    vector<Root> roots, merged;
+    uint32_t cnt = 0;
 
-    size_t idx = 0;
-    while (idx < cuts.size() && cuts[idx].t < t) ++idx;
-    if (idx < cuts.size() && cuts[idx].pt == pt) return;
+    for (auto lc : lhs.contours) {
+        INLIST_FOREACH((*lc), ls) {
+            for (auto rc : rhs.contours) {
+                INLIST_FOREACH((*rc), rs) {
+                    roots.clear();
+                    merged.clear();
+                    _isolate(ls->bezier, 0.0f, 1.0f, rs->bezier, 0.0f, 1.0f, 0, roots);
 
-    cuts.insert(cuts.begin() + idx, {t, pt});
-}
+                    for (auto& root : roots) {
+                        _refine(ls->bezier, rs->bezier, root);
+                        /* a hit on a shared vertex is reported by both neighbors. the
+                           half open range keeps the one that owns it as its start. */
+                        if (root.t > 1.0f - PATHOP_EPSILON || root.u > 1.0f - PATHOP_EPSILON) continue;
+                        if (root.t < PATHOP_EPSILON) root.t = PATHOP_EPSILON;
+                        if (root.u < PATHOP_EPSILON) root.u = PATHOP_EPSILON;
+                        if (_duplicated(merged, root)) continue;
+                        merged.push_back(root);
+                    }
 
+                    /* a pair of segments crosses a few times at most. a swarm of roots
+                       means the two lie on top of each other, which this walk cannot
+                       express - the overlap is left to the contour level instead. */
+                    if (merged.size() > PATHOP_OVERLAP) continue;
 
-//subdivides the edges at every crossing with the counterpart.
-static void _split(vector<Edge>& edges, const vector<Edge>& others, float precision)
-{
-    vector<Edge> out;
-    vector<Cut> cuts;
-
-    out.reserve(edges.size());
-
-    for (auto& e : edges) {
-        cuts.clear();
-
-        for (auto& o : others) {
-            Point pt;
-            if (cross(e.dir(), o.dir()) == 0.0) {
-                //collinear: cut at the overlapping ends so the shared edges stay identical
-                if (cross(o.pt1 - e.pt1, e.dir()) != 0.0) continue;
-                _cut(cuts, e, o.pt1);
-                _cut(cuts, e, o.pt2);
-            } else if (_prior(e, o) ? _crossing(e, o, pt, precision) : _crossing(o, e, pt, precision)) {
-                _cut(cuts, e, pt);
-            }
-        }
-
-        auto prev = e.pt1;
-        for (auto& cut : cuts) {
-            _pushEdge(out, prev, cut.pt);
-            prev = cut.pt;
-        }
-        _pushEdge(out, prev, e.pt2);
-    }
-
-    edges = std::move(out);
-}
-
-
-static Edge* _coincident(vector<Edge>& edges, const Edge& edge)
-{
-    for (auto& e : edges) {
-        if (e.used) continue;
-        if (e.pt1 == edge.pt1 && e.pt2 == edge.pt2) return &e;
-        if (e.pt1 == edge.pt2 && e.pt2 == edge.pt1) return &e;
-    }
-    return nullptr;
-}
-
-
-/* an edge lying on the counterpart's boundary has no inside/outside answer, so it
-   is resolved by the operation and the relative direction instead of the winding.
-
-                     same direction        opposite direction
-        Add          keep a single copy    drop both
-        Intersect    keep a single copy    drop both
-        Subtract     drop both             keep the lhs copy          */
-static void _classify(vector<Edge>& lhs, vector<Edge>& rhs, PathOp op, vector<Edge>& out)
-{
-    for (auto& e : lhs) {
-        if (auto pair = _coincident(rhs, e)) {
-            pair->used = true;
-            auto sameDir = (e.pt1 == pair->pt1);
-            if (op == PathOp::Subtract ? !sameDir : sameDir) out.push_back({e.pt1, e.pt2});
-            continue;
-        }
-        auto inside = (_winding(rhs, e.mid()) != 0);
-        if (op == PathOp::Intersect ? inside : !inside) out.push_back({e.pt1, e.pt2});
-    }
-
-    for (auto& e : rhs) {
-        if (e.used) continue;
-        auto inside = (_winding(lhs, e.mid()) != 0);
-        if (op == PathOp::Add ? !inside : inside) {
-            //the subtracted region is carved out, so its boundary runs backwards
-            if (op == PathOp::Subtract) out.push_back({e.pt2, e.pt1});
-            else out.push_back({e.pt1, e.pt2});
-        }
-    }
-}
-
-
-//walks the survived edges back into the contours.
-static void _chain(vector<Edge>& edges, RenderPath& out, float precision)
-{
-    vector<Point> contour;
-
-    out.cmds.reserve(out.cmds.size() + edges.size());
-    out.pts.reserve(out.pts.size() + edges.size());
-
-    for (auto& head : edges) {
-        if (head.used) continue;
-
-        contour.clear();
-        contour.push_back(head.pt1);
-        contour.push_back(head.pt2);
-        head.used = true;
-
-        auto cur = &head;
-        while (true) {
-            Edge* next = nullptr;
-            auto min = FLT_MAX;
-            //at a crossing, the least turning edge continues the contour
-            for (auto& e : edges) {
-                if (e.used || !(e.pt1 == cur->pt2)) continue;
-                auto turn = fabsf(atan2f(cross(cur->dir(), e.dir()), dot(cur->dir(), e.dir())));
-                if (turn < min) {
-                    min = turn;
-                    next = &e;
+                    for (auto& root : merged) {
+                        _pair(ls, root.t, rs, root.u);
+                        ++cnt;
+                    }
                 }
             }
-            if (!next) break;
-            next->used = true;
-            cur = next;
-            contour.push_back(cur->pt2);
-            if (cur->pt2 == contour.front()) break;
         }
+    }
+    return cnt;
+}
 
-        if (contour.size() < 4) continue;
 
-        //snapping can leave a sliver thinner than the grid, it is not a contour
-        auto area = 0.0;
-        for (size_t i = 1; i < contour.size(); ++i) area += cross(contour[i - 1], contour[i]);
-        if (fabs(area) * 0.5 * precision < 1.0) continue;
+static void _prepare(Path& path, const Path& other)
+{
+    for (auto contour : path.contours) {
+        INLIST_FOREACH((*contour), segment) {
+            segment->split();
+            INLIST_FOREACH(segment->intersections, is) {
+                is->inOut = (_winding(other, is->nextBezier->at(0.5f)) != 0);
+            }
+        }
+    }
+}
 
-        out.moveTo(contour.front());
-        for (size_t i = 1; i < contour.size() - 1; ++i) out.lineTo(contour[i]);
+
+/************************************************************************/
+/* Walk                                                                 */
+/************************************************************************/
+
+static void _emit(RenderPath& out, const Bezier& bezier)
+{
+    if (bezier.line()) out.lineTo(bezier.end);
+    else out.cubicTo(bezier.ctrl1, bezier.ctrl2, bezier.end);
+}
+
+
+//emits the curve pieces from @p from up to the next intersection and returns it
+static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
+{
+    if (forward) {
+        _emit(out, *from->nextBezier);
+        if (from->next) return from->next;
+
+        auto segment = from->segment->nextSegment();
+        while (segment->intersections.empty()) {
+            _emit(out, segment->bezier);
+            segment = segment->nextSegment();
+            if (segment == from->segment) return nullptr;
+        }
+        _emit(out, *segment->intersections.head->prevBezier);
+        return segment->intersections.head;
+    }
+
+    _emit(out, from->prevBezier->reverse());
+    if (from->prev) return from->prev;
+
+    auto segment = from->segment->prevSegment();
+    while (segment->intersections.empty()) {
+        _emit(out, segment->bezier.reverse());
+        segment = segment->prevSegment();
+        if (segment == from->segment) return nullptr;
+    }
+    _emit(out, segment->intersections.tail->nextBezier->reverse());
+    return segment->intersections.tail;
+}
+
+
+static void _walk(Path& lhs, PathOp op, RenderPath& out)
+{
+    auto entry = (op == PathOp::Intersect);   //intersect rides the inner pieces
+
+    for (auto contour : lhs.contours) {
+        INLIST_FOREACH((*contour), segment) {
+            INLIST_FOREACH(segment->intersections, head) {
+                if (head->visited || head->inOut != entry) continue;
+
+                out.moveTo(head->segment->bezier.at(head->t));
+
+                auto cur = head;
+                auto forward = true;
+                while (cur && !cur->visited) {
+                    cur->visited = true;
+                    auto next = _advance(out, cur, forward);
+                    if (!next) break;
+                    next->visited = true;
+                    cur = next->pairedIntersection;
+                    //the subtracted operand is walked backwards, its boundary is carved out
+                    if (op == PathOp::Subtract) forward = !forward;
+                }
+                out.close();
+            }
+        }
+    }
+}
+
+
+//the contours that never meet the counterpart are taken or dropped as a whole
+static void _isolated(Path& path, const Path& other, PathOp op, bool lhs, RenderPath& out)
+{
+    for (auto contour : path.contours) {
+        auto crossed = false;
+        INLIST_FOREACH((*contour), segment) {
+            if (!segment->intersections.empty()) { crossed = true; break; }
+        }
+        if (crossed) continue;
+
+        auto inside = (_winding(other, contour->head->bezier.at(0.5f)) != 0);
+        auto keep = false;
+        auto reverse = false;
+
+        if (op == PathOp::Add) keep = !inside;
+        else if (op == PathOp::Intersect) keep = inside;
+        else {
+            keep = (lhs != inside);
+            reverse = !lhs;
+        }
+        if (!keep) continue;
+
+        if (reverse) {
+            out.moveTo(contour->tail->bezier.end);
+            for (auto segment = contour->tail; segment; segment = segment->prev) _emit(out, segment->bezier.reverse());
+        } else {
+            out.moveTo(contour->head->bezier.start);
+            INLIST_FOREACH((*contour), segment) _emit(out, segment->bezier);
+        }
         out.close();
     }
 }
 
 
-static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, PathOp op, float scale = 1.0f)
+static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, PathOp op)
 {
-    auto precision = PATHOP_PRECISION * scale;
-    vector<Edge> a, b, survived;
+    Path a, b;
 
-    _collect(lhs, a, scale, precision);
-    _collect(rhs, b, scale, precision);
-    if (a.empty() || b.empty()) return false;
+    _build(lhs, a);
+    _build(rhs, b);
+    if (a.contours.empty() || b.contours.empty()) return false;
 
     //the operands must share the winding direction
-    if (_area(a) * _area(b) < 0.0) {
-        for (auto& e : b) e.reverse();
+    if (_area(a) * _area(b) < 0.0f) _reverse(b);
+
+    if (_intersect(a, b) > 0) {
+        _prepare(a, b);
+        _prepare(b, a);
+        _walk(a, op, out);
     }
 
-    //each side is cut against the intact counterpart, otherwise the crossings would
-    //be solved from different segments and drift apart
-    auto ra = a;
-    auto rb = b;
-    _split(a, rb, precision);
-    _split(b, ra, precision);
+    _isolated(a, b, op, true, out);
+    _isolated(b, a, op, false, out);
 
-    _classify(a, b, op, survived);
-    if (survived.empty()) return false;
-
-    _chain(survived, out, precision);
-
-    return true;
+    return !out.cmds.empty();
 }
 
 
