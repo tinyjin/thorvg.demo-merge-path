@@ -22,6 +22,11 @@
 
 #include "mergepath.h"
 
+#define PATHOP_EPSILON 1e-5f
+#define PATHOP_FLATNESS 0.05f    //how far a curve may bow and still pass as a line
+#define PATHOP_DEPTH 24
+#define PATHOP_OVERLAP 6         //root count that reveals an overlap, not crossings
+
 
 /************************************************************************/
 /* Missing members of the thorvg types                                  */
@@ -34,10 +39,10 @@ struct BBox : compat::BBox
     BBox(const Point& min, const Point& max) : compat::BBox{min, max} {}
 
     //BBox carries no overlap test
-    bool intersected(const BBox& rhs, float tolerance) const
+    bool intersected(const BBox& rhs) const
     {
-        return !(max.x + tolerance < rhs.min.x || rhs.max.x + tolerance < min.x ||
-                 max.y + tolerance < rhs.min.y || rhs.max.y + tolerance < min.y);
+        return !(max.x + PATHOP_FLATNESS < rhs.min.x || rhs.max.x + PATHOP_FLATNESS < min.x ||
+                 max.y + PATHOP_FLATNESS < rhs.min.y || rhs.max.y + PATHOP_FLATNESS < min.y);
     }
 };
 
@@ -116,11 +121,6 @@ struct Inlist : compat::Inlist<T>
 /************************************************************************/
 
 namespace {
-
-constexpr float PATHOP_EPSILON = 1e-5f;
-constexpr float PATHOP_TOLERANCE = 0.05f;   //curve isolation. it only has to separate the roots, _refine locates them
-constexpr uint32_t PATHOP_DEPTH = 24;
-constexpr size_t PATHOP_OVERLAP = 6;      //root count that reveals an overlap, not crossings
 
 enum class PathOp : uint8_t { Add = 0, Intersect, Subtract };
 
@@ -229,10 +229,10 @@ static void _refine(const Bezier& lhs, const Bezier& rhs, Root& root)
 static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs, float rt0, float rt1, uint32_t depth, vector<Root>& roots)
 {
     auto lbox = lhs.bounds();
-    if (!lbox.intersected(rhs.bounds(), PATHOP_TOLERANCE)) return;
+    if (!lbox.intersected(rhs.bounds())) return;
 
-    auto lflat = lhs.flatten(PATHOP_TOLERANCE);
-    auto rflat = rhs.flatten(PATHOP_TOLERANCE);
+    auto lflat = lhs.flatten(PATHOP_FLATNESS);
+    auto rflat = rhs.flatten(PATHOP_FLATNESS);
 
     if (depth >= PATHOP_DEPTH || (lflat && rflat)) {
         auto r = lhs.end - lhs.start;
@@ -685,7 +685,7 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
     if (lhs.cmds.empty() || rhs.cmds.empty()) return false;
 
     //fast path: apart and winding alike
-    if (!_bounds(lhs).intersected(_bounds(rhs), PATHOP_EPSILON) && _area(lhs) * _area(rhs) > 0.0f) {
+    if (!_bounds(lhs).intersected(_bounds(rhs)) && _area(lhs) * _area(rhs) > 0.0f) {
         if (op != PathOp::Intersect) {
             _copy(lhs, out);
             if (op == PathOp::Add) _copy(rhs, out);
