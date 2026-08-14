@@ -105,7 +105,7 @@ static void paint(SkCanvas* canvas, const SkPath& path, bool fill)
 
 static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
 {
-    auto tile = std::min(float(w) / 4.0f, float(h) / 2.0f);
+    auto tile = std::min(float(w) / 5.0f, float(h) / 2.0f);
     auto progress = float(elapsed % 4000) / 4000.0f;
     auto angle = float(elapsed % 4000) / 4000.0f * 2.0f * float(M_PI);
     auto cx = tile * 0.5f, cy = tile * 0.44f;
@@ -127,7 +127,7 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
 
     auto begin = clk::now();
 
-    SkPath out[8], tmp, again;
+    SkPath out[10], tmp, again;
     out[0] = merge(a, b);
     Op(a, b, kUnion_SkPathOp, &out[1]);
     Op(a, b, kDifference_SkPathOp, &out[2]);
@@ -137,6 +137,9 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     if (Op(a, b, kUnion_SkPathOp, &tmp)) Op(tmp, c, kDifference_SkPathOp, &out[5]);
     Op(d, e, kUnion_SkPathOp, &out[6]);
     if (Op(a, b, kUnion_SkPathOp, &again)) Op(again, b, kDifference_SkPathOp, &out[7]);
+    //the purest overlap there is - the two boundaries are the very same curve
+    Op(b, b, kUnion_SkPathOp, &out[8]);
+    Op(b, b, kDifference_SkPathOp, &out[9]);
 
     auto spent = std::chrono::duration<double, std::milli>(clk::now() - begin).count();
 
@@ -144,14 +147,16 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     frame.setStyle(SkPaint::kStroke_Style);
     frame.setColor(0xffe1e4eb);
 
-    for (uint32_t i = 0; i < 8; ++i) {
+    for (uint32_t i = 0; i < 10; ++i) {
         canvas->save();
-        canvas->translate(float(i % 4) * tile, float(i / 4) * tile);
+        canvas->translate(float(i % 5) * tile, float(i / 5) * tile);
         canvas->drawRect({0.0f, 0.0f, tile, tile}, frame);
         paint(canvas, out[i], true);
         if (i == 6) {
             paint(canvas, d, false);
             paint(canvas, e, false);
+        } else if (i >= 8) {
+            paint(canvas, b, false);
         } else {
             paint(canvas, a, false);
             paint(canvas, b, false);
@@ -238,10 +243,10 @@ int main(int argc, char** argv)
     }
 
     uint32_t W = count > 0 ? 900 : 1600;
-    uint32_t H = count > 0 ? 900 : 800;
+    uint32_t H = count > 0 ? 900 : 640;
 
     if (count > 0) printf("stress: a union of %d curve blobs, accumulated over %d merges\n", count, count - 1);
-    else printf("tiles: Merge | Add | Subtract | Intersect  /  Exclude | Add-then-Subtract | shared edge | reused operand\n");
+    else printf("tiles: mm 1~5  /  accumulated | shared edge | reused operand | same shape +/-\n");
 
     if (offscreen) { dump(W, H, uint32_t(offscreen), uint32_t(count)); return 0; }
 

@@ -41,7 +41,7 @@ struct TilesDemo : tvgdemo::Demo
 
     TilesDemo(bool trace) : trace(trace) {}
 
-    static constexpr uint32_t COLS = 4;
+    static constexpr uint32_t COLS = 5;
     static constexpr uint32_t ROWS = 2;
     static constexpr uint32_t TILES = COLS * ROWS;
 
@@ -49,8 +49,8 @@ struct TilesDemo : tvgdemo::Demo
        the last two are the cases this solver cannot do yet - both come down to a
        boundary that lies on top of the counterpart's boundary. */
     static constexpr const char* LABELS[TILES] = {
-        "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)", "Intersect (mm:4)",
-        "Exclude (mm:5)", "Add, then Subtract", "Add — shared edge", "(a+b) - b — reused"
+        "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)", "Intersect (mm:4)", "Exclude (mm:5)",
+        "Add, then Subtract", "Add — shared edge", "(a+b) - b — reused", "b + b — same shape", "b - b — same shape"
     };
 
     struct Tile
@@ -209,6 +209,10 @@ struct TilesDemo : tvgdemo::Demo
         RenderPath again;
         if (AddMask(a, b, again)) SubtractMask(again, b, out[7]);
 
+        //the purest overlap there is - the two boundaries are the very same curve
+        AddMask(b, b, out[8]);
+        SubtractMask(b, b, out[9]);
+
         auto spent = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - begin).count();
         cost += spent;
         ++costCnt;
@@ -230,6 +234,10 @@ struct TilesDemo : tvgdemo::Demo
             if (i == 6) {
                 tile.operands->appendPath(d.cmds.data(), d.cmds.size(), d.pts.data(), d.pts.size());
                 tile.operands->appendPath(e.cmds.data(), e.cmds.size(), e.pts.data(), e.pts.size());
+                continue;
+            }
+            if (i >= 8) {
+                tile.operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
                 continue;
             }
             tile.operands->appendPath(a.cmds.data(), a.cmds.size(), a.pts.data(), a.pts.size());
