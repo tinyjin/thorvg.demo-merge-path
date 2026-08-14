@@ -30,7 +30,7 @@ build() {
 
     # a quoted include resolves next to the source, so the whole set is copied
     git -C "$DIR" show "$REV:mergepath.h" > "$WORK/mergepath.h"
-    cp "$DIR/tvgmergepath.cpp" "$DIR/template.h" "$WORK/"
+    cp "$DIR/tvgmergepath.cpp" "$DIR/template.h" "$DIR/demo_tiles.h" "$DIR/demo_stress.h" "$WORK/"
 
     echo "== building tvgmergepath-flat  (solver of $REV)"
     g++ "$WORK/tvgmergepath.cpp" -o "$DIR/tvgmergepath-flat" \
@@ -38,7 +38,7 @@ build() {
         $(sdl2-config --cflags --libs) -L"$THORVG/lib" -lthorvg -Wl,-rpath,"$THORVG/lib"
 
     echo "== building tvgmergepath-curve (solver of the working tree)"
-    g++ "$DIR/tvgmergepath.cpp" -o "$DIR/tvgmergepath-curve" \
+    g++ "$DIR/tvgmergepath.cpp" "$DIR/mergepath.cpp" -o "$DIR/tvgmergepath-curve" \
         -O3 -std=c++20 -DRES_DIR=\""$DIR/res"\" -I"$DIR" -I"$THORVG/include" \
         $(sdl2-config --cflags --libs) -L"$THORVG/lib" -lthorvg -Wl,-rpath,"$THORVG/lib"
 

@@ -20,6 +20,9 @@
  * SOFTWARE.
  */
 
+#ifndef _TVG_DEMO_TEMPLATE_H_
+#define _TVG_DEMO_TEMPLATE_H_
+
 #include <memory>
 #include <iostream>
 #include <cstring>
@@ -476,3 +479,5 @@ int main(Demo* demo, int argc, char **argv, bool clearBuffer = false, uint32_t w
 }
 
 };
+
+#endif //_TVG_DEMO_TEMPLATE_H_

@@ -1,5 +1,5 @@
 TARGET = tvgmergepath
-SRC = tvgmergepath.cpp
+SRC = tvgmergepath.cpp mergepath.cpp
 
 # ThorVG install prefix. Override to link a locally built engine:
 #   make THORVG=/path/to/install

@@ -29,7 +29,7 @@ SKIA=${SKIA:-$HOME/Work/LottieFiles/skia}
 
 build() {
     echo "== tvg_bench"
-    g++ "$DIR/tvg_bench.cpp" -o "$DIR/tvg_bench" -O2 -std=c++20 \
+    g++ "$DIR/tvg_bench.cpp" "$DIR/../mergepath.cpp" -o "$DIR/tvg_bench" -O2 -std=c++20 \
         -I"$THORVG/include" -L"$THORVG/lib" -lthorvg -Wl,-rpath,"$THORVG/lib"
 
     if [ -f "$SKIA/out/pathops/libskia.a" ]; then
@@ -38,7 +38,7 @@ build() {
             -I"$SKIA" -I"$DIR" "$SKIA/out/pathops/libskia.a" \
             -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework CoreServices
         echo "== crosscheck"
-        g++ "$DIR/crosscheck.cpp" -o "$DIR/crosscheck" -O2 -std=c++20 \
+        g++ "$DIR/crosscheck.cpp" "$DIR/../mergepath.cpp" -o "$DIR/crosscheck" -O2 -std=c++20 \
             -I"$SKIA" -I"$DIR" -I"$THORVG/include" "$SKIA/out/pathops/libskia.a" \
             -L"$THORVG/lib" -lthorvg -Wl,-rpath,"$THORVG/lib" \
             -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework CoreServices
