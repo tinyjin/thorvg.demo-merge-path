@@ -204,72 +204,6 @@ struct Root
 /* Curve Math                                                           */
 /************************************************************************/
 
-//real roots of a t^3 + b t^2 + c t + d within [0, 1)
-static uint32_t _roots(float a, float b, float c, float d, float* out)
-{
-    uint32_t cnt = 0;
-
-    /* a line carried as a cubic cancels its two leading terms, but only down to the
-       float noise. the degree has to be judged relative to the coefficients, an
-       absolute epsilon would take the cubic branch on a residual and blow up. */
-    auto scale = fmaxf(fmaxf(fabsf(a), fabsf(b)), fmaxf(fabsf(c), fabsf(d)));
-    if (scale < FLT_MIN) return 0;
-    a /= scale;
-    b /= scale;
-    c /= scale;
-    d /= scale;
-
-    if (fabsf(a) < PATHOP_EPSILON) {
-        if (fabsf(b) < PATHOP_EPSILON) {
-            if (fabsf(c) < PATHOP_EPSILON) return 0;
-            out[cnt] = -d / c;
-            if (out[cnt] >= 0.0f && out[cnt] < 1.0f) ++cnt;
-            return cnt;
-        }
-        auto disc = c * c - 4.0f * b * d;
-        if (disc < 0.0f) return 0;
-        disc = sqrtf(disc);
-        for (auto s : {(-c + disc) / (2.0f * b), (-c - disc) / (2.0f * b)}) {
-            if (s >= 0.0f && s < 1.0f) out[cnt++] = s;
-        }
-        return cnt;
-    }
-
-    auto p = b / a, q = c / a, r = d / a;
-    auto Q = (3.0f * q - p * p) / 9.0f;
-    auto R = (9.0f * p * q - 27.0f * r - 2.0f * p * p * p) / 54.0f;
-    auto D = Q * Q * Q + R * R;
-
-    if (D >= 0.0f) {
-        auto sd = sqrtf(D);
-        auto s = cbrtf(R + sd);
-        auto t = cbrtf(R - sd);
-        auto x = s + t - p / 3.0f;
-        if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
-        if (fabsf(D) < PATHOP_EPSILON) {   //repeated root
-            x = -0.5f * (s + t) - p / 3.0f;
-            if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
-        }
-    } else {
-        auto theta = acosf(R / sqrtf(-Q * Q * Q));
-        auto m = 2.0f * sqrtf(-Q);
-        for (uint32_t i = 0; i < 3; ++i) {
-            auto x = m * cosf((theta + float(i) * 2.0f * float(M_PI)) / 3.0f) - p / 3.0f;
-            if (x >= 0.0f && x < 1.0f) out[cnt++] = x;
-        }
-    }
-    return cnt;
-}
-
-
-//the parameters where the curve crosses the horizontal line
-static uint32_t _crossings(const Bezier& bz, float y, float* out)
-{
-    auto d0 = bz.start.y - y, d1 = bz.ctrl1.y - y, d2 = bz.ctrl2.y - y, d3 = bz.end.y - y;
-    return _roots(-d0 + 3.0f * d1 - 3.0f * d2 + d3, 3.0f * d0 - 6.0f * d1 + 3.0f * d2, -3.0f * d0 + 3.0f * d1, d0, out);
-}
-
-
 //refines a crossing on the intact curves, the isolation is only a seed
 static void _refine(const Bezier& lhs, const Bezier& rhs, Root& root)
 {
@@ -433,20 +367,84 @@ static void _reverse(Path& path)
 }
 
 
+/* the parameters where the curve turns around in y. y'(t) = 0 is a quadratic,
+   and between its roots the curve runs one way. */
+static uint32_t _turns(const Bezier& bz, float* out)
+{
+    auto d1 = bz.ctrl1.y - bz.start.y;
+    auto d2 = bz.ctrl2.y - bz.ctrl1.y;
+    auto d3 = bz.end.y - bz.ctrl2.y;
+
+    auto a = d1 - 2.0f * d2 + d3;
+    auto b = 2.0f * (d2 - d1);
+    auto c = d1;
+
+    auto scale = fmaxf(fabsf(a), fmaxf(fabsf(b), fabsf(c)));
+    if (scale < FLT_MIN) return 0;
+
+    uint32_t cnt = 0;
+    if (fabsf(a) < scale * PATHOP_EPSILON) {
+        if (fabsf(b) >= scale * PATHOP_EPSILON) out[cnt++] = -c / b;
+    } else {
+        auto disc = b * b - 4.0f * a * c;
+        if (disc < 0.0f) return 0;
+        disc = sqrtf(disc);
+        out[cnt++] = (-b + disc) / (2.0f * a);
+        out[cnt++] = (-b - disc) / (2.0f * a);
+    }
+
+    //only the ones strictly inside actually cut the curve
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < cnt; ++i) {
+        if (out[i] > 0.0f && out[i] < 1.0f) out[n++] = out[i];
+    }
+    if (n == 2 && out[0] > out[1]) {
+        auto t = out[0];
+        out[0] = out[1];
+        out[1] = t;
+    }
+    return n;
+}
+
+
+/* a ray runs to the right of @p pt and every piece of the boundary is counted by
+   the half open rule: it counts when it starts on or below the ray and ends
+   strictly above it, or the other way round. a piece that only touches the ray
+   and turns back has both ends on the same side and counts for nothing, which is
+   what a vertex sitting at an extreme has to do.
+
+   the curve is cut at its turning points first, so each piece runs one way in y
+   and carries at most one crossing. */
 static int32_t _winding(const Path& path, const Point& pt)
 {
     int32_t winding = 0;
-    float ts[3];
+    float turns[2];
 
     for (auto contour : path.contours) {
         INLIST_FOREACH((*contour), segment) {
             auto& bz = segment->bezier;
-            auto cnt = _crossings(bz, pt.y, ts);
-            for (uint32_t i = 0; i < cnt; ++i) {
-                if (bz.at(ts[i]).x <= pt.x) continue;
-                auto dir = bz.tangent(ts[i]).y;
-                if (dir > 0.0f) ++winding;
-                else if (dir < 0.0f) --winding;
+            auto cnt = _turns(bz, turns);
+            auto t0 = 0.0f;
+            auto y0 = bz.start.y;
+
+            for (uint32_t i = 0; i <= cnt; ++i) {
+                auto t1 = (i < cnt) ? turns[i] : 1.0f;
+                auto y1 = (i < cnt) ? bz.at(t1).y : bz.end.y;
+                auto up = (y0 <= pt.y && pt.y < y1);
+                auto down = (y1 <= pt.y && pt.y < y0);
+
+                if (up || down) {
+                    //the piece runs one way, so the crossing is unique
+                    auto lo = t0, hi = t1;
+                    for (uint32_t k = 0; k < 30; ++k) {
+                        auto mid = (lo + hi) * 0.5f;
+                        if ((bz.at(mid).y <= pt.y) == up) lo = mid;
+                        else hi = mid;
+                    }
+                    if (bz.at((lo + hi) * 0.5f).x > pt.x) winding += up ? 1 : -1;
+                }
+                t0 = t1;
+                y0 = y1;
             }
         }
     }
