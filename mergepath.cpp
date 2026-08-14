@@ -23,7 +23,6 @@
 #include "mergepath.h"
 
 #define PATHOP_EPSILON 1e-5f
-#define PATHOP_FLATNESS 0.05f    //how far a curve may bow and still pass as a line
 #define PATHOP_DEPTH 24
 #define PATHOP_OVERLAP 6         //root count that reveals an overlap, not crossings
 
@@ -41,8 +40,8 @@ struct BBox : compat::BBox
     //BBox carries no overlap test
     bool intersected(const BBox& rhs) const
     {
-        return !(max.x + PATHOP_FLATNESS < rhs.min.x || rhs.max.x + PATHOP_FLATNESS < min.x ||
-                 max.y + PATHOP_FLATNESS < rhs.min.y || rhs.max.y + PATHOP_FLATNESS < min.y);
+        return !(max.x < rhs.min.x || rhs.max.x < min.x ||
+                 max.y < rhs.min.y || rhs.max.y < min.y);
     }
 };
 
@@ -231,8 +230,9 @@ static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs,
     auto lbox = lhs.bounds();
     if (!lbox.intersected(rhs.bounds())) return;
 
-    auto lflat = lhs.flatten(PATHOP_FLATNESS);
-    auto rflat = rhs.flatten(PATHOP_FLATNESS);
+    constexpr float flatness = 0.05f;
+    auto lflat = lhs.flatten(flatness);
+    auto rflat = rhs.flatten(flatness);
 
     if (depth >= PATHOP_DEPTH || (lflat && rflat)) {
         auto r = lhs.end - lhs.start;
