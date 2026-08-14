@@ -131,7 +131,6 @@ struct Intersection
     INLIST_ITEM(Intersection);
 
     Segment* segment = nullptr;
-    Segment* pairedSegment = nullptr;
     Intersection* pairedIntersection = nullptr;
     float t = 0.0f;
     Bezier* prevBezier = nullptr;
@@ -483,12 +482,10 @@ static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
     auto b = new Intersection;
 
     a->segment = lhs;
-    a->pairedSegment = rhs;
     a->pairedIntersection = b;
     a->t = lt;
 
     b->segment = rhs;
-    b->pairedSegment = lhs;
     b->pairedIntersection = a;
     b->t = rt;
 
