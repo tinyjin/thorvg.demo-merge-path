@@ -277,8 +277,7 @@ static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs,
 /* Path Build                                                           */
 /************************************************************************/
 
-/* the anchors alone, matching the segment level _area(). a path whose anchors
-   are degenerate reports zero on both, so the two never disagree on a sign. */
+//the signed area of the anchor polygon. only its sign is read, to tell the winding direction apart
 static float _area(const RenderPath& path)
 {
     auto pts = path.pts.data();
@@ -371,16 +370,6 @@ static void _contour(const RenderPath& path, Inlist<Contour>& out)
             }
         }
     }
-}
-
-
-static float _area(const Inlist<Contour>& path)
-{
-    auto sum = 0.0f;
-    INLIST_FOREACH(path, contour) {
-        INLIST_FOREACH(contour->segments, segment) sum += cross(segment->bezier.start, segment->bezier.end);
-    }
-    return 0.5f * sum;
 }
 
 
@@ -700,7 +689,7 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
     if (a.empty() || b.empty()) return false;
 
     //the operands must share the winding direction
-    if (_area(a) * _area(b) < 0.0f) _reverse(b);
+    if (_area(lhs) * _area(rhs) < 0.0f) _reverse(b);
 
     if (_intersect(a, b) > 0) {
         _mark(a, b);
