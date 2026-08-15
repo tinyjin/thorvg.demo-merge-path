@@ -155,16 +155,12 @@ struct Segment
     Contour* parent = nullptr;
     Inlist<Intersection> intersections;
 
-    //keeps the intersections ordered along the curve
-    void sort(Intersection* is)
+    Intersection* sort(float t)
     {
         INLIST_FOREACH(intersections, cur) {
-            if (cur->t > is->t) {
-                intersections.insert(is, cur);
-                return;
-            }
+            if (cur->t > t) return cur;
         }
-        intersections.back(is);
+        return nullptr;
     }
 
     //hands each intersection the curve pieces on both sides
@@ -507,8 +503,8 @@ static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
     b->paired = a;
     b->t = rt;
 
-    lhs->sort(a);
-    rhs->sort(b);
+    lhs->intersections.insert(a, lhs->sort(lt));
+    rhs->intersections.insert(b, rhs->sort(rt));
 }
 
 
