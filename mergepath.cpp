@@ -138,7 +138,7 @@ struct Intersection
     float t = 0.0f;
     Bezier* prevBezier = nullptr;
     Bezier* nextBezier = nullptr;
-    bool inOut{};       //the piece right after this point lies inside the counterpart
+    bool inside{};
     bool visited{};
 
     ~Intersection()
@@ -569,7 +569,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
         INLIST_FOREACH(contour->segments, segment) {
             segment->split();
             INLIST_FOREACH(segment->intersections, is) {
-                is->inOut = (_winding(other, is->nextBezier->at(0.5f)) != 0);
+                is->inside = (_winding(other, is->nextBezier->at(0.5f)) != 0);
             }
         }
     }
@@ -612,7 +612,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
     INLIST_FOREACH(lhs, contour) {
         INLIST_FOREACH(contour->segments, segment) {
             INLIST_FOREACH(segment->intersections, head) {
-                if (head->visited || head->inOut != entry) continue;
+                if (head->visited || head->inside != entry) continue;
 
                 out.moveTo(head->segment->bezier.at(head->t));
 
