@@ -147,6 +147,39 @@ struct Intersection
     }
 };
 
+//loop style sorting instead of recursion
+static Intersection* _merged(Intersection* lhs, Intersection* rhs)
+{
+    Intersection* out = nullptr;
+    auto tail = &out;
+
+    while (lhs && rhs) {
+        if (lhs->t <= rhs->t) { *tail = lhs; lhs = lhs->next; }
+        else { *tail = rhs; rhs = rhs->next; }
+        tail = &(*tail)->next;
+    }
+    *tail = lhs ? lhs : rhs;
+
+    return out;
+}
+
+
+static Intersection* _sorted(Intersection* head)
+{
+    if (!head || !head->next) return head;
+
+    auto slow = head, fast = head->next;
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
+    auto rhs = slow->next;
+    slow->next = nullptr;
+
+    return _merged(_sorted(head), _sorted(rhs));
+}
+
+
 struct Segment
 {
     INLIST_ITEM(Segment);
@@ -155,13 +188,18 @@ struct Segment
     Contour* parent = nullptr;
     Inlist<Intersection> intersections;
 
-    Intersection* sort(float t)
+    void sort()
     {
-        //At worst, O(n^2)
+        if (intersections.count < 2) return;
+
+        intersections.head = _sorted(intersections.head);
+
+        Intersection* prev = nullptr;
         INLIST_FOREACH(intersections, cur) {
-            if (cur->t > t) return cur;
+            cur->prev = prev;
+            prev = cur;
         }
-        return nullptr;
+        intersections.tail = prev;
     }
 
     //hands each intersection the curve pieces on both sides
@@ -504,8 +542,8 @@ static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
     b->paired = a;
     b->t = rt;
 
-    lhs->intersections.insert(a, lhs->sort(lt));
-    rhs->intersections.insert(b, rhs->sort(rt));
+    lhs->intersections.back(a);
+    rhs->intersections.back(b);
 }
 
 
@@ -565,6 +603,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
     INLIST_FOREACH(path, contour) {
         Intersection* first = nullptr;
         INLIST_FOREACH(contour->segments, segment) {
+            segment->sort();
             segment->split();
             if (!first && !segment->intersections.empty()) first = segment->intersections.head;
         }
