@@ -157,6 +157,7 @@ struct Segment
 
     Intersection* sort(float t)
     {
+        //At worst, O(n^2)
         INLIST_FOREACH(intersections, cur) {
             if (cur->t > t) return cur;
         }
@@ -522,6 +523,7 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
     vector<Root> roots, merged;
     uint32_t cnt = 0;
 
+    //O(n^2)
     INLIST_FOREACH(lhs, lc) {
         INLIST_FOREACH(lc->segments, ls) {
             INLIST_FOREACH(rhs, rc) {
@@ -561,6 +563,7 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
     INLIST_FOREACH(path, contour) {
+        //O(n^2)
         INLIST_FOREACH(contour->segments, segment) {
             segment->split();
             INLIST_FOREACH(segment->intersections, is) {
