@@ -104,7 +104,10 @@ struct Inlist : compat::Inlist<T>
 {
     void insert(T* element, T* at)
     {
-        if (!at) { this->back(element); return; }
+        if (!at) {
+            this->back(element);
+            return;
+        }
         element->prev = at->prev;
         element->next = at;
         if (at->prev) at->prev->next = element;
@@ -285,10 +288,26 @@ static float _area(const RenderPath& path)
 
     for (auto cmd : path.cmds) {
         switch (cmd) {
-            case PathCommand::MoveTo: sum += cross(cur, start); start = cur = *pts++; break;
-            case PathCommand::LineTo: sum += cross(cur, *pts); cur = *pts++; break;
-            case PathCommand::CubicTo: sum += cross(cur, pts[2]); cur = pts[2]; pts += 3; break;
-            case PathCommand::Close: sum += cross(cur, start); cur = start; break;
+            case PathCommand::MoveTo: {
+                sum += cross(cur, start);
+                start = cur = *pts++;
+                break;
+            }
+            case PathCommand::LineTo: {
+                sum += cross(cur, *pts);
+                cur = *pts++;
+                break;
+            }
+            case PathCommand::CubicTo: {
+                sum += cross(cur, pts[2]);
+                cur = pts[2]; pts += 3;
+                break;
+            }
+            case PathCommand::Close: {
+                sum += cross(cur, start);
+                cur = start;
+                break;
+            }
         }
     }
     return 0.5f * (sum + cross(cur, start));
@@ -633,7 +652,10 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
     INLIST_FOREACH(path, contour) {
         auto crossed = false;
         INLIST_FOREACH(contour->segments, segment) {
-            if (!segment->intersections.empty()) { crossed = true; break; }
+            if (!segment->intersections.empty()) {
+                crossed = true;
+                break;
+            }
         }
         if (crossed) continue;
 
