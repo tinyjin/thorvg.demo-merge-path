@@ -22,15 +22,23 @@
 
 #include "demo_tiles.h"
 #include "demo_stress.h"
+#include "demo_comb.h"
 
 int main(int argc, char **argv)
 {
     auto stress = 0;
+    auto comb = 0;
     auto trace = false;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t")) trace = true;
         else if (!strcmp(argv[i], "-s")) stress = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 12;
+        else if (!strcmp(argv[i], "-c")) comb = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 128;
+    }
+
+    if (comb > 0) {
+        printf("comb: %d teeth crossed by one bar, up to %d crossings land on a single segment\n", comb, comb * 2);
+        return tvgdemo::main(new CombDemo(uint32_t(comb), trace), argc, argv, true, 1200, 700, 0);
     }
 
     if (stress > 0) {
