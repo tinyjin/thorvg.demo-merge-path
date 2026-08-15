@@ -71,8 +71,7 @@ struct Bezier : compat::Bezier
         return {end, ctrl2, ctrl1, start};
     }
 
-    /* the control polygon box. thorvg has Bezier::bounds() that solves the real
-       extrema, tighter but costlier. this only rejects pairs, so the loose one wins. */
+    //the bezier's bounding box
     BBox bounds() const
     {
         BBox box;
@@ -81,7 +80,7 @@ struct Bezier : compat::Bezier
         return box;
     }
 
-    //the control points sit on the chord, so it can be emitted as a line
+    //check if the bezier is a line
     bool line() const
     {
         auto chord = end - start;
@@ -90,7 +89,7 @@ struct Bezier : compat::Bezier
         return fabsf(cross(chord, ctrl1 - start)) / leng < 1e-3f && fabsf(cross(chord, ctrl2 - start)) / leng < 1e-3f;
     }
 
-    //a line carried as a cubic, so the pipeline has one segment type
+    //convert the bezier from a line
     static Bezier line(const Point& start, const Point& end)
     {
         return {start, lerp(start, end, 1.0f / 3.0f), lerp(start, end, 2.0f / 3.0f), end};
@@ -583,7 +582,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 static void _emit(RenderPath& out, const Bezier& bezier, bool forward)
 {
     auto bz = forward ? bezier : bezier.reverse();
-    if (bz.line()) out.lineTo(bz.end);
+    if (bz.line()) out.lineTo(bz.end); //if so, it can be emitted as a line
     else out.cubicTo(bz.ctrl1, bz.ctrl2, bz.end);
 }
 
