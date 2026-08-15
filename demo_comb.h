@@ -53,6 +53,7 @@ struct CombDemo : tvgdemo::Demo
     float w = 0.0f, h = 0.0f;
 
     double cost = 0.0;
+    double frameCost = 0.0;
     uint32_t costCnt = 0;
     uint32_t reported = 0;
 
@@ -114,6 +115,7 @@ struct CombDemo : tvgdemo::Demo
 
     bool update(Canvas* canvas, uint32_t elapsed) override
     {
+        auto frameBegin = chrono::high_resolution_clock::now();
         auto progress = float(elapsed % 6000) / 6000.0f;
         auto sweep = 0.5f - 0.5f * cosf(progress * 2.0f * float(M_PI));
 
@@ -144,14 +146,18 @@ struct CombDemo : tvgdemo::Demo
             label->text(buf);
         }
 
+        canvas->update();
+
+        frameCost += chrono::duration<double, milli>(chrono::high_resolution_clock::now() - frameBegin).count();
+
         if (trace && elapsed / 1000 > reported) {
             reported = elapsed / 1000;
-            printf("comb: %.3f ms / frame (%u teeth, up to %u crossings on one segment)\n", cost / costCnt, teeth, teeth * 2);
+            printf("comb: merge %.3f ms  |  update() 전체 %.3f ms  (%u teeth, %u crossings)\n",
+                   cost / costCnt, frameCost / costCnt, teeth, teeth * 2);
             cost = 0.0;
+            frameCost = 0.0;
             costCnt = 0;
         }
-
-        canvas->update();
 
         return true;
     }

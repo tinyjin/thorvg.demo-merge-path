@@ -168,6 +168,53 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
 }
 
 
+
+/* the same comb as the thorvg demo. every tooth meets the same two bar segments,
+   so all the crossings pile onto those two. */
+static double comb(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed, uint32_t teeth)
+{
+    auto W = float(w), H = float(h);
+    auto progress = float(elapsed % 6000) / 6000.0f;
+    auto sweep = 0.5f - 0.5f * cosf(progress * 2.0f * float(M_PI));
+
+    SkPathBuilder tb;
+    auto left = W * 0.06f, right = W * 0.94f;
+    auto base = H * 0.62f, tip = H * 0.22f;
+    auto step = (right - left) / float(teeth);
+    tb.moveTo(left, base);
+    for (uint32_t i = 0; i < teeth; ++i) {
+        tb.lineTo(left + (float(i) + 0.5f) * step, tip);
+        tb.lineTo(left + (float(i) + 1.0f) * step, base);
+    }
+    tb.lineTo(right, H * 0.9f);
+    tb.lineTo(left, H * 0.9f);
+    tb.close();
+    auto teethPath = tb.detach();
+
+    auto y = H * (0.24f + 0.32f * sweep), thick = H * 0.035f;
+    SkPathBuilder bb;
+    bb.moveTo(W * 0.02f, y);
+    bb.lineTo(W * 0.98f, y);
+    bb.lineTo(W * 0.98f, y + thick);
+    bb.lineTo(W * 0.02f, y + thick);
+    bb.close();
+    auto barPath = bb.detach();
+
+    auto begin = clk::now();
+
+    SkPath merged;
+    Op(teethPath, barPath, kUnion_SkPathOp, &merged);
+
+    auto spent = std::chrono::duration<double, std::milli>(clk::now() - begin).count();
+
+    paint(canvas, merged, true);
+    paint(canvas, teethPath, false);
+    paint(canvas, barPath, false);
+
+    return spent;
+}
+
+
 static double stress(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed, uint32_t count, uint32_t& cubics)
 {
     auto spin = float(elapsed % 8000) / 8000.0f * 2.0f * float(M_PI);
@@ -235,17 +282,20 @@ static void dump(uint32_t W, uint32_t H, uint32_t elapsed, uint32_t count)
 int main(int argc, char** argv)
 {
     auto count = 0;
+    auto teeth = 0;
     auto offscreen = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t")) traceCost = true;
         else if (!strcmp(argv[i], "-s")) count = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 12;
+        else if (!strcmp(argv[i], "-c")) teeth = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 128;
         else if (!strcmp(argv[i], "-o")) offscreen = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 2000;
     }
 
-    uint32_t W = count > 0 ? 900 : 1600;
-    uint32_t H = count > 0 ? 900 : 640;
+    uint32_t W = teeth > 0 ? 1200 : (count > 0 ? 900 : 1600);
+    uint32_t H = teeth > 0 ? 700 : (count > 0 ? 900 : 640);
 
-    if (count > 0) printf("stress: a union of %d curve blobs, accumulated over %d merges\n", count, count - 1);
+    if (teeth > 0) printf("comb: %d teeth crossed by one bar, up to %d crossings land on a single segment\n", teeth, teeth * 2);
+    else if (count > 0) printf("stress: a union of %d curve blobs, accumulated over %d merges\n", count, count - 1);
     else printf("tiles: mm 1~5  /  accumulated | shared edge | reused operand | same shape +/-\n");
 
     if (offscreen) { dump(W, H, uint32_t(offscreen), uint32_t(count)); return 0; }
@@ -255,7 +305,7 @@ int main(int argc, char** argv)
 
     auto begin = SDL_GetTicks();
     auto reported = 0u;
-    double cost = 0.0;
+    double cost = 0.0, frameCost = 0.0;
     uint32_t costCnt = 0, cubics = 0;
     auto running = true;
 
@@ -275,21 +325,26 @@ int main(int argc, char** argv)
         if (!target) break;
 
         auto canvas = target->getCanvas();
+        auto frameBegin = clk::now();
         canvas->clear(0xffffffff);
 
         auto elapsed = SDL_GetTicks() - begin;
-        auto spent = count > 0 ? stress(canvas, uint32_t(surface->w), uint32_t(surface->h), elapsed, uint32_t(count), cubics)
+        auto spent = teeth > 0 ? comb(canvas, uint32_t(surface->w), uint32_t(surface->h), elapsed, uint32_t(teeth))
+                   : count > 0 ? stress(canvas, uint32_t(surface->w), uint32_t(surface->h), elapsed, uint32_t(count), cubics)
                                : tiles(canvas, uint32_t(surface->w), uint32_t(surface->h), elapsed);
         cost += spent;
         ++costCnt;
+        frameCost += std::chrono::duration<double, std::milli>(clk::now() - frameBegin).count();
 
         SDL_UpdateWindowSurface(window);
 
         if (traceCost && elapsed / 1000 > reported) {
             reported = elapsed / 1000;
-            if (count > 0) printf("stress: %.3f ms / frame (%d merges, %u cubics out)\n", cost / costCnt, count - 1, cubics);
+            if (teeth > 0) printf("comb: merge %.3f ms  |  그리기 포함 %.3f ms  (%d teeth, %d crossings)\n", cost / costCnt, frameCost / costCnt, teeth, teeth * 2);
+            else if (count > 0) printf("stress: %.3f ms / frame (%d merges, %u cubics out)\n", cost / costCnt, count - 1, cubics);
             else printf("merge path: %.3f ms / frame\n", cost / costCnt);
             cost = 0.0;
+            frameCost = 0.0;
             costCnt = 0;
         }
     }

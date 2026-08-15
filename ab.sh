@@ -30,7 +30,7 @@ build() {
 
     # a quoted include resolves next to the source, so the whole set is copied
     git -C "$DIR" show "$REV:mergepath.h" > "$WORK/mergepath.h"
-    cp "$DIR/tvgmergepath.cpp" "$DIR/template.h" "$DIR/demo_tiles.h" "$DIR/demo_stress.h" "$WORK/"
+    cp "$DIR/tvgmergepath.cpp" "$DIR/template.h" "$DIR/demo_tiles.h" "$DIR/demo_stress.h" "$DIR/demo_comb.h" "$WORK/"
 
     echo "== building tvgmergepath-flat  (solver of $REV)"
     g++ "$WORK/tvgmergepath.cpp" -o "$DIR/tvgmergepath-flat" \
