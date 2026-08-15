@@ -563,15 +563,35 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
     INLIST_FOREACH(path, contour) {
-        //O(n^2)
+        Intersection* first = nullptr;
         INLIST_FOREACH(contour->segments, segment) {
             segment->split();
-            INLIST_FOREACH(segment->intersections, is) {
-                is->inside = (_winding(other, is->nextBezier->at(0.5f)) != 0);
+            if (!first && !segment->intersections.empty()) first = segment->intersections.head;
+        }
+        if (!first) continue;
+
+        auto winding = _winding(other, first->nextBezier->at(0.5f));
+        first->inside = (winding != 0);
+
+        auto cur = first;
+        while (true) {
+            auto next = cur->next;
+            if (!next) {
+                auto segment = cur->segment->nextSegment();
+                while (segment->intersections.empty()) segment = segment->nextSegment();
+                next = segment->intersections.head;
             }
+            if (next == first) break;
+
+            auto turn = cross(next->paired->segment->bezier.tangent(next->paired->t), next->segment->bezier.tangent(next->t));
+            if (fabsf(turn) < PATHOP_EPSILON) winding = _winding(other, next->nextBezier->at(0.5f));
+            else winding += turn > 0.0f ? 1 : -1;
+            next->inside = (winding != 0);
+            cur = next;
         }
     }
 }
+
 
 
 /************************************************************************/
