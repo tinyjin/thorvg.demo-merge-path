@@ -74,6 +74,38 @@ static SkPath rect(float cx, float cy, float w, float h)
 }
 
 
+//the counter wound inner circle is what makes the hole a hole
+static SkPath ring(float cx, float cy, float outer, float inner)
+{
+    auto k = inner * 0.552284f;
+    SkPathBuilder builder;
+    builder.addPath(build(scenario::circle(cx, cy, outer)));
+    builder.moveTo(cx, cy - inner);
+    builder.cubicTo({cx - k, cy - inner}, {cx - inner, cy - k}, {cx - inner, cy});
+    builder.cubicTo({cx - inner, cy + k}, {cx - k, cy + inner}, {cx, cy + inner});
+    builder.cubicTo({cx + k, cy + inner}, {cx + inner, cy + k}, {cx + inner, cy});
+    builder.cubicTo({cx + inner, cy - k}, {cx + k, cy - inner}, {cx, cy - inner});
+    builder.close();
+    builder.setFillType(SkPathFillType::kWinding);
+    return builder.detach();
+}
+
+
+static SkPath spun(float cx, float cy, float outer, float inner, int cnt, float spin)
+{
+    SkPathBuilder builder;
+    for (int i = 0; i < cnt * 2; ++i) {
+        auto r = (i % 2) ? inner : outer;
+        auto a = float(i) * float(M_PI) / float(cnt) - float(M_PI) * 0.5f + spin;
+        SkPoint pt = {cx + cosf(a) * r, cy + sinf(a) * r};
+        if (i == 0) builder.moveTo(pt); else builder.lineTo(pt);
+    }
+    builder.close();
+    builder.setFillType(SkPathFillType::kWinding);
+    return builder.detach();
+}
+
+
 //mm:1 Merge, the operands are concatenated as they are
 static SkPath merge(const SkPath& a, const SkPath& b)
 {
@@ -125,9 +157,17 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     auto d = db.detach();
     auto e = eb.detach();
 
+    /* a hole only survives if the counter wound inner circle keeps its direction
+       through the solve, and the star both orbits and spins so the ring is cut
+       into pieces and rejoined over and over. */
+    auto orbit = radius * 0.62f;
+    auto f = ring(cx, cy, radius, radius * 0.5f);
+    auto g = spun(cx + cosf(angle) * orbit, cy + sinf(angle) * orbit,
+                  radius * (0.55f + 0.30f * (0.5f - 0.5f * cosf(angle * 2.0f))), radius * 0.26f, 5, -angle * 2.0f);
+
     auto begin = clk::now();
 
-    SkPath out[10], tmp, again;
+    SkPath out[10], tmp;
     out[0] = merge(a, b);
     Op(a, b, kUnion_SkPathOp, &out[1]);
     Op(a, b, kDifference_SkPathOp, &out[2]);
@@ -136,7 +176,7 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
     //a group accumulates, so a merged result becomes the operand of the next one
     if (Op(a, b, kUnion_SkPathOp, &tmp)) Op(tmp, c, kDifference_SkPathOp, &out[5]);
     Op(d, e, kUnion_SkPathOp, &out[6]);
-    if (Op(a, b, kUnion_SkPathOp, &again)) Op(again, b, kDifference_SkPathOp, &out[7]);
+    Op(f, g, kDifference_SkPathOp, &out[7]);
     //the purest overlap there is - the two boundaries are the very same curve
     Op(b, b, kUnion_SkPathOp, &out[8]);
     Op(b, b, kDifference_SkPathOp, &out[9]);
@@ -155,6 +195,9 @@ static double tiles(SkCanvas* canvas, uint32_t w, uint32_t h, uint32_t elapsed)
         if (i == 6) {
             paint(canvas, d, false);
             paint(canvas, e, false);
+        } else if (i == 7) {
+            paint(canvas, f, false);
+            paint(canvas, g, false);
         } else if (i >= 8) {
             paint(canvas, b, false);
         } else {
@@ -296,7 +339,7 @@ int main(int argc, char** argv)
 
     if (teeth > 0) printf("comb: %d teeth crossed by one bar, up to %d crossings land on a single segment\n", teeth, teeth * 2);
     else if (count > 0) printf("stress: a union of %d curve blobs, accumulated over %d merges\n", count, count - 1);
-    else printf("tiles: mm 1~5  /  accumulated | shared edge | reused operand | same shape +/-\n");
+    else printf("tiles: mm 1~5  /  accumulated | shared edge | ring - star | same shape +/-\n");
 
     if (offscreen) { dump(W, H, uint32_t(offscreen), uint32_t(count)); return 0; }
 

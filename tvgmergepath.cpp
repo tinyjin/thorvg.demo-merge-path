@@ -46,7 +46,7 @@ int main(int argc, char **argv)
         return tvgdemo::main(new StressDemo(uint32_t(stress), trace), argc, argv, true, 900, 900, 0);
     }
 
-    printf("tiles: mm 1~5  /  accumulated | shared edge | reused operand | same shape +/-\n");
+    printf("tiles: mm 1~5  /  accumulated | shared edge | ring - star | same shape +/-\n");
 
     return tvgdemo::main(new TilesDemo(trace), argc, argv, true, 1600, 640, 0);
 }

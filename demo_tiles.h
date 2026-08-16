@@ -45,12 +45,12 @@ struct TilesDemo : tvgdemo::Demo
     static constexpr uint32_t ROWS = 2;
     static constexpr uint32_t TILES = COLS * ROWS;
 
-    /* the first five are the lottie merge modes, then one that stacks two of them.
-       the last two are the cases this solver cannot do yet - both come down to a
-       boundary that lies on top of the counterpart's boundary. */
+    /* the first five are the lottie merge modes, then three that stack them. the
+       shared edge one is what this solver cannot take yet - a boundary that lies on
+       a piece of the counterpart's, rather than on the whole of it. */
     static constexpr const char* LABELS[TILES] = {
         "Merge (mm:1)", "Add (mm:2)", "Subtract (mm:3)", "Intersect (mm:4)", "Exclude (mm:5)",
-        "Add, then Subtract", "Add — shared edge", "(a+b) - b — reused", "b + b — same shape", "b - b — same shape"
+        "Add, then Subtract", "Add — shared edge", "Ring - star", "b + b — same shape", "b - b — same shape"
     };
 
     struct Tile
@@ -68,11 +68,11 @@ struct TilesDemo : tvgdemo::Demo
     uint32_t costCnt = 0;
     uint32_t reported = 0;
 
-    void star(RenderPath& path, const Point& center, float outer, float inner, uint32_t cnt)
+    void star(RenderPath& path, const Point& center, float outer, float inner, uint32_t cnt, float spin = 0.0f)
     {
         for (uint32_t i = 0; i < cnt * 2; ++i) {
             auto radius = (i % 2) ? inner : outer;
-            auto angle = float(i) * float(M_PI) / float(cnt) - float(M_PI) * 0.5f;
+            auto angle = float(i) * float(M_PI) / float(cnt) - float(M_PI) * 0.5f + spin;
             Point pt = {center.x + cosf(angle) * radius, center.y + sinf(angle) * radius};
             if (i == 0) path.moveTo(pt);
             else path.lineTo(pt);
@@ -88,6 +88,20 @@ struct TilesDemo : tvgdemo::Demo
         path.cubicTo({center.x + r, center.y + c}, {center.x + c, center.y + r}, {center.x, center.y + r});
         path.cubicTo({center.x - c, center.y + r}, {center.x - r, center.y + c}, {center.x - r, center.y});
         path.cubicTo({center.x - r, center.y - c}, {center.x - c, center.y - r}, {center.x, center.y - r});
+        path.close();
+    }
+
+    //the counter wound inner circle is what makes the hole a hole
+    void ring(RenderPath& path, const Point& center, float outer, float inner)
+    {
+        circle(path, center, outer);
+
+        auto c = inner * PATH_KAPPA;
+        path.moveTo({center.x, center.y - inner});
+        path.cubicTo({center.x - c, center.y - inner}, {center.x - inner, center.y - c}, {center.x - inner, center.y});
+        path.cubicTo({center.x - inner, center.y + c}, {center.x - c, center.y + inner}, {center.x, center.y + inner});
+        path.cubicTo({center.x + c, center.y + inner}, {center.x + inner, center.y + c}, {center.x + inner, center.y});
+        path.cubicTo({center.x + inner, center.y - c}, {center.x + c, center.y - inner}, {center.x, center.y - inner});
         path.close();
     }
 
@@ -178,7 +192,7 @@ struct TilesDemo : tvgdemo::Demo
         auto radius = tileSize * 0.28f;
 
         //the operands keep moving, so the whole solve is redone on every frame
-        RenderPath a, b, c, d, e;
+        RenderPath a, b, c, d, e, f, g;
         star(a, {center.x - radius * 0.3f, center.y - radius * 0.25f}, radius, radius * 0.42f, 5);
         circle(b, {center.x + cosf(angle) * radius * 0.5f, center.y + sinf(angle) * radius * 0.5f}, radius * 0.62f);
         bar(c, {center.x, center.y + cosf(angle) * radius * 0.5f}, tileSize * 0.42f, tileSize * 0.06f);
@@ -196,8 +210,8 @@ struct TilesDemo : tvgdemo::Demo
         RenderPath tmp;
         if (AddMask(a, b, tmp)) SubtractMask(tmp, c, out[5]);
 
-        /* two boxes on the very same rows. the loop walks them apart, edge to edge
-           and then overlapping - the shared row is what the solver cannot take. */
+        /* two boxes on the very same rows. the loop walks them apart, edge to edge and
+           then overlapping - only a piece of each side is shared, which is the gap. */
         auto gap = (progress < 0.34f) ? tileSize * 0.06f : (progress < 0.67f ? 0.0f : tileSize * -0.005f);
         auto bx = tileSize * 0.25f, by = tileSize * 0.275f;
         auto bw = tileSize * 0.25f, bh = tileSize * 0.30f;
@@ -205,9 +219,14 @@ struct TilesDemo : tvgdemo::Demo
         box(e, bx + bw + gap, by, bw, bh);
         AddMask(d, e, out[6]);
 
-        //the union already carries the circle's boundary, so subtracting it again overlaps
-        RenderPath again;
-        if (AddMask(a, b, again)) SubtractMask(again, b, out[7]);
+        /* a hole only survives if the counter wound inner circle keeps its direction
+           through the solve, and the star both orbits and spins so the ring is cut
+           into pieces and rejoined over and over. */
+        auto orbit = radius * 0.62f;
+        ring(f, center, radius, radius * 0.5f);
+        star(g, {center.x + cosf(angle) * orbit, center.y + sinf(angle) * orbit},
+             radius * (0.55f + 0.30f * (0.5f - 0.5f * cosf(angle * 2.0f))), radius * 0.26f, 5, -angle * 2.0f);
+        SubtractMask(f, g, out[7]);
 
         //the purest overlap there is - the two boundaries are the very same curve
         AddMask(b, b, out[8]);
@@ -234,6 +253,11 @@ struct TilesDemo : tvgdemo::Demo
             if (i == 6) {
                 tile.operands->appendPath(d.cmds.data(), d.cmds.size(), d.pts.data(), d.pts.size());
                 tile.operands->appendPath(e.cmds.data(), e.cmds.size(), e.pts.data(), e.pts.size());
+                continue;
+            }
+            if (i == 7) {
+                tile.operands->appendPath(f.cmds.data(), f.cmds.size(), f.pts.data(), f.pts.size());
+                tile.operands->appendPath(g.cmds.data(), g.cmds.size(), g.pts.data(), g.pts.size());
                 continue;
             }
             if (i >= 8) {
