@@ -38,8 +38,9 @@ struct TilesDemo : tvgdemo::Demo
     static constexpr const char* FONT = RES_DIR"/font/PublicSans-Regular.ttf";
 
     bool trace;
+    bool outline;
 
-    TilesDemo(bool trace) : trace(trace) {}
+    TilesDemo(bool trace, bool outline) : trace(trace), outline(outline) {}
 
     static constexpr uint32_t COLS = 5;
     static constexpr uint32_t ROWS = 2;
@@ -163,12 +164,14 @@ struct TilesDemo : tvgdemo::Demo
             tile.result = result;
             canvas->add(result);
 
-            auto operands = Shape::gen();
-            operands->strokeWidth(1.0f);
-            operands->strokeFill(150, 155, 165, 110);
-            operands->translate(tile.offset.x, tile.offset.y);
-            tile.operands = operands;
-            canvas->add(operands);
+            if (outline) {
+                auto operands = Shape::gen();
+                operands->strokeWidth(1.0f);
+                operands->strokeFill(150, 155, 165, 110);
+                operands->translate(tile.offset.x, tile.offset.y);
+                tile.operands = operands;
+                canvas->add(operands);
+            }
 
             if (!labeled) continue;
 
@@ -249,6 +252,8 @@ struct TilesDemo : tvgdemo::Demo
             tile.result->reset();
             tile.result->appendPath(out[i].cmds.data(), out[i].cmds.size(), out[i].pts.data(), out[i].pts.size());
 
+            if (!tile.operands) continue;
+
             tile.operands->reset();
             if (i == 6) {
                 tile.operands->appendPath(d.cmds.data(), d.cmds.size(), d.pts.data(), d.pts.size());
@@ -267,7 +272,7 @@ struct TilesDemo : tvgdemo::Demo
             tile.operands->appendPath(a.cmds.data(), a.cmds.size(), a.pts.data(), a.pts.size());
             tile.operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
         }
-        tiles[5].operands->appendPath(c.cmds.data(), c.cmds.size(), c.pts.data(), c.pts.size());
+        if (outline) tiles[5].operands->appendPath(c.cmds.data(), c.cmds.size(), c.pts.data(), c.pts.size());
 
         canvas->update();
 

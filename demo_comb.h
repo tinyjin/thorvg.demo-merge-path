@@ -46,6 +46,7 @@ struct CombDemo : tvgdemo::Demo
 
     uint32_t teeth;
     bool trace;
+    bool outline;
 
     Shape* result = nullptr;
     Shape* operands = nullptr;
@@ -57,7 +58,7 @@ struct CombDemo : tvgdemo::Demo
     uint32_t costCnt = 0;
     uint32_t reported = 0;
 
-    CombDemo(uint32_t teeth, bool trace) : teeth(teeth), trace(trace) {}
+    CombDemo(uint32_t teeth, bool trace, bool outline) : teeth(teeth), trace(trace), outline(outline) {}
 
     void comb(RenderPath& path)
     {
@@ -90,10 +91,12 @@ struct CombDemo : tvgdemo::Demo
         w = float(width);
         h = float(height);
 
-        operands = Shape::gen();
-        operands->strokeWidth(1.0f);
-        operands->strokeFill(150, 160, 175);
-        canvas->add(operands);
+        if (outline) {
+            operands = Shape::gen();
+            operands->strokeWidth(1.0f);
+            operands->strokeFill(150, 160, 175);
+            canvas->add(operands);
+        }
 
         result = Shape::gen();
         result->fill(40, 120, 190, 190);
@@ -135,9 +138,11 @@ struct CombDemo : tvgdemo::Demo
         result->reset();
         result->appendPath(merged.cmds.data(), merged.cmds.size(), merged.pts.data(), merged.pts.size());
 
-        operands->reset();
-        operands->appendPath(teethPath.cmds.data(), teethPath.cmds.size(), teethPath.pts.data(), teethPath.pts.size());
-        operands->appendPath(barPath.cmds.data(), barPath.cmds.size(), barPath.pts.data(), barPath.pts.size());
+        if (operands) {
+            operands->reset();
+            operands->appendPath(teethPath.cmds.data(), teethPath.cmds.size(), teethPath.pts.data(), teethPath.pts.size());
+            operands->appendPath(barPath.cmds.data(), barPath.cmds.size(), barPath.pts.data(), barPath.pts.size());
+        }
 
         if (label) {
             char buf[160];

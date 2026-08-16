@@ -115,8 +115,14 @@ static SkPath merge(const SkPath& a, const SkPath& b)
 }
 
 
+//the faint operand outlines behind the result, off with -n
+static bool g_outline = true;
+
+
 static void paint(SkCanvas* canvas, const SkPath& path, bool fill)
 {
+    if (!fill && !g_outline) return;
+
     SkPaint p;
     p.setAntiAlias(true);
     if (fill) {
@@ -329,6 +335,7 @@ int main(int argc, char** argv)
     auto offscreen = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t")) traceCost = true;
+        else if (!strcmp(argv[i], "-n")) g_outline = false;
         else if (!strcmp(argv[i], "-s")) count = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 12;
         else if (!strcmp(argv[i], "-c")) teeth = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 128;
         else if (!strcmp(argv[i], "-o")) offscreen = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 2000;

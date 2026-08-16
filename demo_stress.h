@@ -39,6 +39,7 @@ struct StressDemo : tvgdemo::Demo
 
     uint32_t count;
     bool trace;
+    bool outline;
 
     Shape* result = nullptr;
     Shape* operands = nullptr;
@@ -50,7 +51,7 @@ struct StressDemo : tvgdemo::Demo
     uint32_t costCnt = 0;
     uint32_t reported = 0;
 
-    StressDemo(uint32_t count, bool trace) : count(count), trace(trace) {}
+    StressDemo(uint32_t count, bool trace, bool outline) : count(count), trace(trace), outline(outline) {}
 
     //a closed cubic path through the sampled points
     void smooth(RenderPath& path, const vector<Point>& pts)
@@ -95,10 +96,12 @@ struct StressDemo : tvgdemo::Demo
         result->strokeFill(20, 40, 90);
         canvas->add(result);
 
-        operands = Shape::gen();
-        operands->strokeWidth(1.0f);
-        operands->strokeFill(150, 155, 165, 90);
-        canvas->add(operands);
+        if (outline) {
+            operands = Shape::gen();
+            operands->strokeWidth(1.0f);
+            operands->strokeFill(150, 155, 165, 90);
+            canvas->add(operands);
+        }
 
         if (Text::load(FONT) == Result::Success) {
             label = Text::gen();
@@ -141,8 +144,10 @@ struct StressDemo : tvgdemo::Demo
         result->reset();
         result->appendPath(acc.cmds.data(), acc.cmds.size(), acc.pts.data(), acc.pts.size());
 
-        operands->reset();
-        for (auto& b : blobs) operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
+        if (operands) {
+            operands->reset();
+            for (auto& b : blobs) operands->appendPath(b.cmds.data(), b.cmds.size(), b.pts.data(), b.pts.size());
+        }
 
         uint32_t cubics = 0;
         for (auto cmd : acc.cmds) {
