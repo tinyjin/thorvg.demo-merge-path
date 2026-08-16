@@ -603,6 +603,17 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 }
 
 
+static void _prep(Inlist<Contour>& path)
+{
+    INLIST_FOREACH(path, contour) {
+        INLIST_FOREACH(contour->segments, segment) {
+            segment->sort();
+            segment->split();
+        }
+    }
+}
+
+
 static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
     INLIST_FOREACH(path, contour) {
@@ -768,7 +779,7 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
 
     if (_intersect(a, b) > 0) {
         _mark(a, b);
-        _mark(b, a);
+        _prep(b);
         _merge(a, op, out);
     }
 
