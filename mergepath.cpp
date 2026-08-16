@@ -680,7 +680,7 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool forward)
 
 static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
 {
-    auto entry = (op == PathOp::Intersect);   //intersect rides the inner pieces
+    auto entry = (op == PathOp::Intersect); //intersect starts from inner pieces
 
     INLIST_FOREACH(lhs, contour) {
         INLIST_FOREACH(contour->segments, segment) {
@@ -697,8 +697,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                     if (!next) break;
                     next->visited = true;
                     cur = next->paired;
-                    //the subtracted operand is walked backwards, its boundary is carved out
-                    if (op == PathOp::Subtract) forward = !forward;
+                    if (op == PathOp::Subtract) forward = !forward; //if subtract, walk backwards
                 }
                 out.close();
             }
