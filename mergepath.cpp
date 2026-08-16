@@ -144,9 +144,9 @@ struct Intersection
 
     Segment* segment = nullptr;
     Intersection* paired = nullptr;
-    float t = 0.0f;
     Bezier* prevBezier = nullptr;
     Bezier* nextBezier = nullptr;
+    float t = 0.0f;
     bool inside{};
     bool visited{};
 
