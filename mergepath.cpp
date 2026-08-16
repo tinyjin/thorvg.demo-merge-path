@@ -143,7 +143,7 @@ struct Intersection
     INLIST_ITEM(Intersection);
 
     Segment* segment = nullptr;
-    Intersection* paired = nullptr;
+    Intersection* pair = nullptr;
     Bezier* prevBezier = nullptr;
     Bezier* nextBezier = nullptr;
     float t = 0.0f;
@@ -164,8 +164,14 @@ static Intersection* _merged(Intersection* lhs, Intersection* rhs)
     auto tail = &out;
 
     while (lhs && rhs) {
-        if (lhs->t <= rhs->t) { *tail = lhs; lhs = lhs->next; }
-        else { *tail = rhs; rhs = rhs->next; }
+        if (lhs->t <= rhs->t) {
+            *tail = lhs;
+            lhs = lhs->next;
+        }
+        else {
+            *tail = rhs;
+            rhs = rhs->next;
+        }
         tail = &(*tail)->next;
     }
     *tail = lhs ? lhs : rhs;
@@ -539,11 +545,11 @@ static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
     auto b = new Intersection;
 
     a->segment = lhs;
-    a->paired = b;
+    a->pair = b;
     a->t = lt;
 
     b->segment = rhs;
-    b->paired = a;
+    b->pair = a;
     b->t = rt;
 
     lhs->intersections.back(a);
