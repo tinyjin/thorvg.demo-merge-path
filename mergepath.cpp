@@ -451,14 +451,14 @@ static void _reverse(Inlist<Contour>& path)
 }
 
 
-/* the parameters where the curve turns around in y. y'(t) = 0 is a quadratic,
-   and between its roots the curve runs one way. */
+//count curve's Extrema points
 static uint32_t _turns(const Bezier& bz, float* out)
 {
     auto d1 = bz.ctrl1.y - bz.start.y;
     auto d2 = bz.ctrl2.y - bz.ctrl1.y;
     auto d3 = bz.end.y - bz.ctrl2.y;
 
+    //y'(t) = 3(at² + bt + c)
     auto a = d1 - 2.0f * d2 + d3;
     auto b = 2.0f * (d2 - d1);
     auto c = d1;
@@ -491,14 +491,7 @@ static uint32_t _turns(const Bezier& bz, float* out)
 }
 
 
-/* a ray runs to the right of @p pt and every piece of the boundary is counted by
-   the half open rule: it counts when it starts on or below the ray and ends
-   strictly above it, or the other way round. a piece that only touches the ray
-   and turns back has both ends on the same side and counts for nothing, which is
-   what a vertex sitting at an extreme has to do.
-
-   the curve is cut at its turning points first, so each piece runs one way in y
-   and carries at most one crossing. */
+//ray casting the pt to every piece
 static int32_t _winding(const Inlist<Contour>& path, const Point& pt)
 {
     int32_t winding = 0;
@@ -517,8 +510,8 @@ static int32_t _winding(const Inlist<Contour>& path, const Point& pt)
                 auto up = (y0 <= pt.y && pt.y < y1);
                 auto down = (y1 <= pt.y && pt.y < y0);
 
-                if (up || down) {
-                    //the piece runs one way, so the crossing is unique
+                if (up || down) { //intersection candidate
+                    //binary search the intersection point
                     auto lo = t0, hi = t1;
                     for (uint32_t k = 0; k < 30; ++k) {
                         auto mid = (lo + hi) * 0.5f;
