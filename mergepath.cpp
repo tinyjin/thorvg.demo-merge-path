@@ -644,7 +644,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
             }
             if (next == first) break;
 
-            auto turn = cross(next->paired->segment->bezier.tangent(next->paired->t), next->segment->bezier.tangent(next->t));
+            auto turn = cross(next->pair->segment->bezier.tangent(next->pair->t), next->segment->bezier.tangent(next->t));
             if (fabsf(turn) < PATHOP_EPSILON) winding = _winding(other, next->nextBezier->at(0.5f));
             else winding += turn > 0.0f ? 1 : -1;
             next->inside = (winding != 0);
@@ -702,7 +702,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                     auto next = _advance(out, cur, forward);
                     if (!next) break;
                     next->visited = true;
-                    cur = next->paired;
+                    cur = next->pair;
                     if (op == PathOp::Subtract) forward = !forward; //if subtract, walk backwards
                 }
                 out.close();
