@@ -24,7 +24,7 @@
 
 #define PATHOP_EPSILON 1e-5f
 #define PATHOP_DEPTH 24
-#define PATHOP_OVERLAP 6         //root count that reveals an overlap, not crossings
+#define PATHOP_OVERLAP 9
 
 
 /************************************************************************/
@@ -87,6 +87,16 @@ struct Bezier : compat::Bezier
         auto leng = length(chord);
         if (leng < 1e-6f) return true;
         return fabsf(cross(chord, ctrl1 - start)) / leng < 1e-3f && fabsf(cross(chord, ctrl2 - start)) / leng < 1e-3f;
+    }
+
+    //check if the bezier is overlapped with another bezier
+    bool overlapped(const Bezier& rhs) const
+    {
+        auto same = [](const Point& lhs, const Point& rhs) {
+            return length2(lhs - rhs) < PATHOP_EPSILON;
+        };
+        return (same(start, rhs.start) && same(ctrl1, rhs.ctrl1) && same(ctrl2, rhs.ctrl2) && same(end, rhs.end)) ||
+               (same(start, rhs.end) && same(ctrl1, rhs.ctrl2) && same(ctrl2, rhs.ctrl1) && same(end, rhs.start));
     }
 
     //convert the bezier from a line
@@ -187,6 +197,7 @@ struct Segment
     Bezier bezier;
     Contour* parent = nullptr;
     Inlist<Intersection> intersections;
+    bool coincident{};
 
     void sort()
     {
@@ -581,10 +592,11 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
                         merged.push_back(root);
                     }
 
-                    /* a pair of segments crosses a few times at most. a swarm of roots
-                       means the two lie on top of each other, which this walk cannot
-                       express - the overlap is left to the contour level instead. */
-                    if (merged.size() > PATHOP_OVERLAP) continue;
+                    //3rd-order bezier curve cannot cross 9+ times unless it is overlapped
+                    if (merged.size() > PATHOP_OVERLAP || ls->bezier.overlapped(rs->bezier)) {
+                        ls->coincident = rs->coincident = true;
+                        continue;
+                    }
 
                     for (auto& root : merged) {
                         _pair(ls, root.t, rs, root.u);
@@ -708,13 +720,21 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
 {
     INLIST_FOREACH(path, contour) {
         auto crossed = false;
+        auto shared = true;
         INLIST_FOREACH(contour->segments, segment) {
             if (!segment->intersections.empty()) {
                 crossed = true;
                 break;
             }
+            if (!segment->coincident) shared = false;
         }
         if (crossed) continue;
+
+        //overlapped, copy only one side
+        if (shared) {
+            if (op != PathOp::Subtract && lhs) _copy(contour, false, out);
+            continue;
+        }
 
         auto inside = (_winding(other, contour->segments.head->bezier.at(0.5f)) != 0);
         auto keep = false;
