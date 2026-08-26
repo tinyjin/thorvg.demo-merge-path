@@ -23,19 +23,27 @@
 #include "demo_tiles.h"
 #include "demo_stress.h"
 #include "demo_comb.h"
+#include "demo_fragile.h"
 
 int main(int argc, char **argv)
 {
     auto stress = 0;
     auto comb = 0;
+    auto fragile = false;
     auto trace = false;
     auto outline = true;   //the faint operand outlines behind the result
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t")) trace = true;
         else if (!strcmp(argv[i], "-n")) outline = false;
+        else if (!strcmp(argv[i], "-f")) fragile = true;
         else if (!strcmp(argv[i], "-s")) stress = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 12;
         else if (!strcmp(argv[i], "-c")) comb = (i + 1 < argc && isdigit(argv[i + 1][0])) ? atoi(argv[++i]) : 128;
+    }
+
+    if (fragile) {
+        printf("fragile: the arrangements the solver does not hold, the wrong frame count is printed once a second\n");
+        return tvgdemo::main(new FragileDemo(trace, outline), argc, argv, true, 1500, 900, 0);
     }
 
     if (comb > 0) {
