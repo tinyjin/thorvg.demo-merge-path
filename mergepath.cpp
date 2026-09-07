@@ -619,17 +619,19 @@ static int32_t _winding(const Inlist<Contour>& path, const Point& pt)
 //turns every contour to agree with its nesting depth
 static void _orient(Inlist<Contour>& path)
 {
+    auto facing = 0.0f;
+    auto widest = 0.0f;
+
     INLIST_FOREACH(path, contour) {
-        auto pt = contour->segments.head->bezier.at(0.5f);
-        auto depth = 0;
-
-        INLIST_FOREACH(path, other) {
-            if (other != contour && _winding(other, pt) != 0) ++depth;
+        auto area = _area(contour);
+        if (fabsf(area) > widest) {
+            widest = fabsf(area);
+            facing = area;
         }
-
-        auto outward = (depth % 2 == 0);
-        if ((_area(contour) > 0.0f) != outward) _reverse(contour);
     }
+    if (facing >= 0.0f) return;
+
+    INLIST_FOREACH(path, contour) _reverse(contour);
 }
 
 
