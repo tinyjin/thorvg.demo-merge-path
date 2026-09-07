@@ -855,9 +855,15 @@ static bool _owned(const Segment* segment, PathOp op)
 
 
 //turns the walk onto the twin at the end it stands at
-static Segment* _handover(const Segment* segment, bool& forward)
+static Segment* _handover(const Segment* segment, bool& forward, PathOp op)
 {
     auto twin = segment->twin;
+
+    if (_owned(twin, op)) {
+        if (segment->coincident < 0) forward = !forward;
+        return twin;
+    }
+
     if (segment->coincident > 0) forward = !forward;
     return forward ? twin->nextSegment() : twin->prevSegment();
 }
@@ -880,7 +886,7 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool& forward
     auto segment = forward ? from->segment->nextSegment() : from->segment->prevSegment();
     while (segment->intersections.empty()) {
         if (segment->twin && !_owned(segment, op)) {
-            segment = _handover(segment, forward);
+            segment = _handover(segment, forward, op);
             continue;
         }
         _emit(out, segment->bezier, forward);
@@ -909,6 +915,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                     cur->visited = true;
                     auto next = _advance(out, cur, forward, op);
                     if (!next) break;
+                    if (next == head) break;
                     next->visited = true;
                     cur = next->pair;
                     if (op == PathOp::Subtract) forward = !forward; //if subtract, walk backwards
@@ -943,7 +950,7 @@ static void _stitch(Segment* from, PathOp op, RenderPath& out)
 
     do {
         if (segment->twin && !_owned(segment, op)) {
-            segment = _handover(segment, forward);
+            segment = _handover(segment, forward, op);
             continue;
         }
         _emit(out, segment->bezier, forward);
@@ -1003,7 +1010,15 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
 
 static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, PathOp op)
 {
-    if (lhs.cmds.empty() || rhs.cmds.empty()) return false;
+    if (lhs.cmds.empty() || rhs.cmds.empty()) {
+        if (op == PathOp::Add) {
+            if (!lhs.cmds.empty()) _copy(lhs, out);
+            else if (!rhs.cmds.empty()) _copy(rhs, out);
+        } else if (op == PathOp::Subtract && !lhs.cmds.empty()) {
+            _copy(lhs, out);
+        }
+        return true;
+    }
 
     auto lbox = _bounds(lhs);
     auto rbox = _bounds(rhs);
