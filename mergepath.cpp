@@ -208,6 +208,7 @@ struct Intersection
     Bezier* nextBezier = nullptr;
     float t = 0.0f;
     bool inside{};
+    bool crossing = true;
     bool visited{};
 
     ~Intersection()
@@ -302,6 +303,9 @@ struct Contour
 
     Inlist<Segment> segments;
     bool rhs = false;
+    bool turn = false;
+    uint32_t depth = 0;
+    Point probe{};
 };
 
 Segment* Segment::nextSegment() { return next ? next : parent->segments.head; }
@@ -619,19 +623,33 @@ static int32_t _winding(const Inlist<Contour>& path, const Point& pt)
 //turns every contour to agree with its nesting depth
 static void _orient(Inlist<Contour>& path)
 {
-    auto facing = 0.0f;
-    auto widest = 0.0f;
-
     INLIST_FOREACH(path, contour) {
-        auto area = _area(contour);
-        if (fabsf(area) > widest) {
-            widest = fabsf(area);
-            facing = area;
+        contour->probe = contour->segments.head->bezier.at(0.5f);
+        contour->depth = 0;
+    }
+    INLIST_FOREACH(path, contour) {
+        INLIST_FOREACH(path, other) {
+            if (other != contour && _winding(other, contour->probe) != 0) ++contour->depth;
         }
     }
-    if (facing >= 0.0f) return;
 
-    INLIST_FOREACH(path, contour) _reverse(contour);
+    INLIST_FOREACH(path, contour) {
+        auto facing = _area(contour);
+
+        if (contour->depth > 0) {
+            INLIST_FOREACH(path, other) {
+                if (other == contour || other->depth > 0) continue;
+                if (_winding(other, contour->probe) == 0) continue;
+                facing = _area(other);
+                break;
+            }
+        }
+        contour->turn = (facing < 0.0f);
+    }
+
+    INLIST_SAFE_FOREACH(path, contour) {
+        if (contour->turn) _reverse(contour);
+    }
 }
 
 
@@ -798,6 +816,48 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 }
 
 
+static Segment* _leaves(Contour* contour, const Point& at)
+{
+    INLIST_FOREACH(contour->segments, segment) {
+        if (segment->coincident) continue;
+        if (length2(segment->bezier.start - at) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return segment;
+    }
+    return nullptr;
+}
+
+
+static bool _noded(const Segment* segment)
+{
+    INLIST_FOREACH(segment->intersections, hit) {
+        if (hit->t <= PATHOP_EPSILON * 2.0f) return true;
+    }
+    return false;
+}
+
+
+static uint32_t _bridge(Inlist<Contour>& lhs)
+{
+    uint32_t cnt = 0;
+
+    INLIST_FOREACH(lhs, contour) {
+        INLIST_FOREACH(contour->segments, segment) {
+            if (!segment->coincident || !segment->twin) continue;
+
+            Point ends[2] = {segment->bezier.start, segment->bezier.end};
+            for (auto& at : ends) {
+                auto ours = _leaves(contour, at);
+                auto theirs = _leaves(segment->twin->parent, at);
+                if (!ours || !theirs) continue;
+                if (_noded(ours) || _noded(theirs)) continue;
+                _pair(ours, PATHOP_EPSILON, theirs, PATHOP_EPSILON);
+                ++cnt;
+            }
+        }
+    }
+    return cnt;
+}
+
+
 static void _prep(Inlist<Contour>& path)
 {
     INLIST_FOREACH(path, contour) {
@@ -822,6 +882,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 
         auto winding = _winding(other, first->nextBezier->at(0.5f));
         first->inside = (winding != 0);
+        auto held = first->inside;
 
         auto cur = first;
         while (true) {
@@ -834,9 +895,13 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
             if (next == first) break;
 
             auto turn = cross(next->pair->segment->bezier.tangent(next->pair->t), next->segment->bezier.tangent(next->t));
-            if (fabsf(turn) < PATHOP_EPSILON) winding = _winding(other, next->nextBezier->at(0.5f));
+            auto onRun = (!next->prev && next->segment->prevSegment()->coincident) ||
+                         (!next->pair->prev && next->pair->segment->prevSegment()->coincident);
+            if (onRun || fabsf(turn) < PATHOP_EPSILON) winding = _winding(other, next->nextBezier->at(0.5f));
             else winding += turn > 0.0f ? 1 : -1;
             next->inside = (winding != 0);
+            next->crossing = (next->inside != held);
+            held = next->inside;
             cur = next;
         }
     }
@@ -849,10 +914,15 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 /************************************************************************/
 
 //who draws a run the two paths share, the left hand operand always carrying it
+static bool _onward(const Segment* segment, PathOp op)
+{
+    return (segment->coincident > 0) ? (op != PathOp::Subtract) : (op == PathOp::Subtract);
+}
+
+
 static bool _owned(const Segment* segment, PathOp op)
 {
-    auto onward = (segment->coincident > 0) ? (op != PathOp::Subtract) : (op == PathOp::Subtract);
-    return onward && !segment->parent->rhs;
+    return _onward(segment, op) && !segment->parent->rhs;
 }
 
 
@@ -887,7 +957,7 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool& forward
 
     auto segment = forward ? from->segment->nextSegment() : from->segment->prevSegment();
     while (segment->intersections.empty()) {
-        if (segment->twin && !_owned(segment, op)) {
+        if (segment->twin && !_onward(segment, op)) {
             segment = _handover(segment, forward, op);
             continue;
         }
@@ -900,11 +970,21 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool& forward
 }
 
 
-static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
+static bool _entry(PathOp op, bool rhs)
 {
-    auto entry = (op == PathOp::Intersect); //intersect starts from inner pieces
+    return rhs ? (op != PathOp::Add) : (op == PathOp::Intersect);
+}
 
-    INLIST_FOREACH(lhs, contour) {
+
+static void _merge(Inlist<Contour>& lhs, Inlist<Contour>& rhs, PathOp op, RenderPath& out)
+{
+    Inlist<Contour>* sides[2] = {&lhs, &rhs};
+
+    for (auto side : sides) {
+    auto& list = *side;
+    auto entry = _entry(op, side == &rhs);
+
+    INLIST_FOREACH(list, contour) {
         INLIST_FOREACH(contour->segments, segment) {
             INLIST_FOREACH(segment->intersections, head) {
                 if (head->visited || head->inside != entry) continue;
@@ -918,6 +998,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                     auto next = _advance(out, cur, forward, op);
                     if (!next) break;
                     if (next == head) break;
+                    if (!next->crossing) { cur = next; continue; }
                     next->visited = true;
                     cur = next->pair;
                     if (op == PathOp::Subtract) forward = !forward; //if subtract, walk backwards
@@ -925,6 +1006,7 @@ static void _merge(Inlist<Contour>& lhs, PathOp op, RenderPath& out)
                 out.close();
             }
         }
+    }
     }
 }
 
@@ -1052,10 +1134,13 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
     _slice(a, b);
     _slice(b, a);
 
-    if (_intersect(a, b) > 0) {
+    auto crossings = _intersect(a, b);
+    crossings += _bridge(a);
+
+    if (crossings > 0) {
         _mark(a, b);
-        _prep(b);
-        _merge(a, op, out);
+        _mark(b, a);
+        _merge(a, b, op, out);
     }
 
     _uncrossed(a, b, op, true, out);
