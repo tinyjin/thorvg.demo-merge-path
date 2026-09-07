@@ -23,6 +23,9 @@
 #include "mergepath.h"
 
 #define PATHOP_EPSILON 1e-5f
+#define PATHOP_TOLERANCE 1e-5f
+#define PATHOP_FLATNESS 2e-4f
+#define PATHOP_STRAIGHT 1e-5f
 #define PATHOP_DEPTH 24
 #define PATHOP_OVERLAP 9
 
@@ -43,6 +46,27 @@ struct BBox : compat::BBox
         return !(max.x < rhs.min.x || rhs.max.x < min.x ||
                  max.y < rhs.min.y || rhs.max.y < min.y);
     }
+};
+
+
+struct Normalizer
+{
+    Point offset{0.0f, 0.0f};
+    float scale = 1.0f;
+
+    Normalizer() {}
+
+    Normalizer(const BBox& box)
+    {
+        offset = {(box.min.x + box.max.x) * 0.5f, (box.min.y + box.max.y) * 0.5f};
+        auto span = fmaxf(box.max.x - box.min.x, box.max.y - box.min.y);
+        if (!(span > 0.0f) || !isfinite(span)) return;
+        auto exp = fmaxf(-60.0f, fminf(60.0f, ceilf(log2f(span))));
+        scale = exp2f(-exp);
+    }
+
+    Point in(const Point& pt) const { return (pt - offset) * scale; }
+    Point out(const Point& pt) const { return pt * (1.0f / scale) + offset; }
 };
 
 
@@ -86,14 +110,14 @@ struct Bezier : compat::Bezier
         auto chord = end - start;
         auto leng = length(chord);
         if (leng < 1e-6f) return true;
-        return fabsf(cross(chord, ctrl1 - start)) / leng < 1e-3f && fabsf(cross(chord, ctrl2 - start)) / leng < 1e-3f;
+        return fabsf(cross(chord, ctrl1 - start)) / leng < PATHOP_STRAIGHT && fabsf(cross(chord, ctrl2 - start)) / leng < PATHOP_STRAIGHT;
     }
 
     //check if the bezier is overlapped, 0 apart, +1 running along, -1 against
     int32_t overlapped(const Bezier& rhs) const
     {
         auto same = [](const Point& lhs, const Point& rhs) {
-            return length2(lhs - rhs) < PATHOP_EPSILON;
+            return length2(lhs - rhs) < PATHOP_TOLERANCE * PATHOP_TOLERANCE;
         };
         if (same(start, rhs.start) && same(ctrl1, rhs.ctrl1) && same(ctrl2, rhs.ctrl2) && same(end, rhs.end)) return 1;
         if (same(start, rhs.end) && same(ctrl1, rhs.ctrl2) && same(ctrl2, rhs.ctrl1) && same(end, rhs.start)) return -1;
@@ -104,7 +128,7 @@ struct Bezier : compat::Bezier
     {
         auto lo = Point{fminf(fminf(start.x, ctrl1.x), fminf(ctrl2.x, end.x)), fminf(fminf(start.y, ctrl1.y), fminf(ctrl2.y, end.y))};
         auto hi = Point{fmaxf(fmaxf(start.x, ctrl1.x), fmaxf(ctrl2.x, end.x)), fmaxf(fmaxf(start.y, ctrl1.y), fmaxf(ctrl2.y, end.y))};
-        auto slack = sqrtf(PATHOP_EPSILON);   //the tolerance is squared elsewhere
+        auto slack = PATHOP_TOLERANCE;
         return pt.x >= lo.x - slack && pt.x <= hi.x + slack && pt.y >= lo.y - slack && pt.y <= hi.y + slack;
     }
 
@@ -328,7 +352,7 @@ static void _isolate(const Bezier& lhs, float lt0, float lt1, const Bezier& rhs,
     auto lbox = lhs.bounds();
     if (!lbox.intersected(rhs.bounds())) return;
 
-    constexpr float flatness = 0.05f;
+    constexpr float flatness = PATHOP_FLATNESS;
     auto lflat = lhs.flatten(flatness);
     auto rflat = rhs.flatten(flatness);
 
@@ -432,7 +456,7 @@ static void _copy(const RenderPath& path, RenderPath& out)
 
 static void _append(Contour* contour, const Bezier& bezier)
 {
-    if (length2(bezier.end - bezier.start) < PATHOP_EPSILON) return;
+    if (length2(bezier.end - bezier.start) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return;
     auto segment = new Segment;
     segment->bezier = bezier;
     segment->parent = contour;
@@ -440,7 +464,7 @@ static void _append(Contour* contour, const Bezier& bezier)
 }
 
 
-static void _contour(const RenderPath& path, bool rhs, Inlist<Contour>& out)
+static void _contour(const RenderPath& path, bool rhs, const Normalizer& norm, Inlist<Contour>& out)
 {
     auto pts = path.pts.data();
     Contour* contour = nullptr;
@@ -453,17 +477,17 @@ static void _contour(const RenderPath& path, bool rhs, Inlist<Contour>& out)
                 contour = new Contour;
                 contour->rhs = rhs;
                 out.back(contour);
-                start = cur = *pts++;
+                start = cur = norm.in(*pts++);
                 break;
             }
             case PathCommand::LineTo: {
-                if (contour) _append(contour, Bezier::line(cur, *pts));
-                cur = *pts++;
+                if (contour) _append(contour, Bezier::line(cur, norm.in(*pts)));
+                cur = norm.in(*pts++);
                 break;
             }
             case PathCommand::CubicTo: {
-                if (contour) _append(contour, {cur, pts[0], pts[1], pts[2]});
-                cur = pts[2];
+                if (contour) _append(contour, {cur, norm.in(pts[0]), norm.in(pts[1]), norm.in(pts[2])});
+                cur = norm.in(pts[2]);
                 pts += 3;
                 break;
             }
@@ -661,8 +685,8 @@ static float _site(Segment* segment, Segment* other)
     auto& corner = other->bezier.start;
     if (!segment->bezier.holds(corner)) return -1.0f;
 
-    if (length2(corner - segment->bezier.start) < PATHOP_EPSILON) return -1.0f;
-    if (length2(corner - segment->bezier.end) < PATHOP_EPSILON) return -1.0f;
+    if (length2(corner - segment->bezier.start) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return -1.0f;
+    if (length2(corner - segment->bezier.end) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return -1.0f;
 
     auto t = segment->bezier.project(corner);
     if (t < 0.0f) return -1.0f;
@@ -981,8 +1005,11 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
 {
     if (lhs.cmds.empty() || rhs.cmds.empty()) return false;
 
+    auto lbox = _bounds(lhs);
+    auto rbox = _bounds(rhs);
+
     //fast path: apart and winding alike
-    if (!_bounds(lhs).intersected(_bounds(rhs)) && _area(lhs) * _area(rhs) > 0.0f) {
+    if (!lbox.intersected(rbox) && _area(lhs) * _area(rhs) > 0.0f) {
         if (op != PathOp::Intersect) {
             _copy(lhs, out);
             if (op == PathOp::Add) _copy(rhs, out);
@@ -990,11 +1017,16 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
         return true;
     }
 
+    Normalizer norm({{fminf(lbox.min.x, rbox.min.x), fminf(lbox.min.y, rbox.min.y)},
+                     {fmaxf(lbox.max.x, rbox.max.x), fmaxf(lbox.max.y, rbox.max.y)}});
+
     Inlist<Contour> a, b;
 
-    _contour(lhs, false, a);
-    _contour(rhs, true, b);
+    _contour(lhs, false, norm, a);
+    _contour(rhs, true, norm, b);
     if (a.empty() || b.empty()) return false;
+
+    auto mark = out.pts.size();
 
     //align the winding directions
     _orient(a);
@@ -1011,6 +1043,8 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
 
     _uncrossed(a, b, op, true, out);
     _uncrossed(b, a, op, false, out);
+
+    for (auto i = mark; i < out.pts.size(); ++i) out.pts[i] = norm.out(out.pts[i]);
 
     return true;
 }
