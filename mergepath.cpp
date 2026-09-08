@@ -865,6 +865,27 @@ static void _prep(Inlist<Contour>& path)
 }
 
 
+static Point _ahead(const Intersection* hit)
+{
+    auto cur = hit;
+
+    do {
+        auto& piece = *cur->nextBezier;
+        if (length2(piece.end - piece.start) > PATHOP_TOLERANCE * PATHOP_TOLERANCE) return piece.at(0.5f);
+
+        auto next = cur->next;
+        if (!next) {
+            auto segment = cur->segment->nextSegment();
+            while (segment->intersections.empty()) segment = segment->nextSegment();
+            next = segment->intersections.head;
+        }
+        cur = next;
+    } while (cur != hit);
+
+    return cur->nextBezier->at(0.5f);
+}
+
+
 static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
     INLIST_FOREACH(path, contour) {
@@ -876,7 +897,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
         }
         if (!first) continue;
 
-        auto held = (_winding(other, first->nextBezier->at(0.5f)) != 0);
+        auto held = (_winding(other, _ahead(first)) != 0);
         first->inside = held;
 
         auto cur = first;
@@ -889,7 +910,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
             }
             if (next == first) break;
 
-            next->inside = (_winding(other, next->nextBezier->at(0.5f)) != 0);
+            next->inside = (_winding(other, _ahead(next)) != 0);
             next->crossing = (next->inside != held);
             held = next->inside;
             cur = next;
