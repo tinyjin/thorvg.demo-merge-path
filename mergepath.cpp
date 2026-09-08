@@ -1178,7 +1178,14 @@ static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, P
 
     _contour(lhs, false, norm, a);
     _contour(rhs, true, norm, b);
-    if (a.empty() || b.empty()) return false;
+
+    if (a.empty() || b.empty()) {
+        if (op == PathOp::Add) {
+            if (!a.empty()) _copy(lhs, out);
+            if (!b.empty()) _copy(rhs, out);
+        } else if (op == PathOp::Subtract && !a.empty()) _copy(lhs, out);
+        return true;
+    }
 
     auto mark = out.pts.size();
 
