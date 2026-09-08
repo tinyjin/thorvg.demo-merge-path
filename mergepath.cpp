@@ -1024,12 +1024,14 @@ static void _merge(Inlist<Contour>& lhs, Inlist<Contour>& rhs, PathOp op, Render
                     if (!next) break;
                     if (next == head) break;
                     if (!next->crossing) { cur = next; continue; }
-                    next->visited = true;
-                    cur = next->pair;
+                    auto twin = next->pair;
+                    auto wanted = _entry(op, twin->segment->parent->rhs);
+                    if (twin->inside != wanted && _behind(twin) != wanted) { cur = next; continue; }
 
-                    auto want = _entry(op, cur->segment->parent->rhs);
-                    if (cur->inside == want) forward = true;
-                    else if (_behind(cur) == want) forward = false;
+                    next->visited = true;
+                    cur = twin;
+
+                    forward = (cur->inside == wanted);
                 }
                 out.close();
             }
