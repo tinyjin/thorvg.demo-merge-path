@@ -852,10 +852,20 @@ static Segment* _leaves(Contour* contour, const Point& at)
 }
 
 
+static Segment* _arrives(Contour* contour, const Point& at)
+{
+    INLIST_FOREACH(contour->segments, segment) {
+        if (segment->coincident) continue;
+        if (length2(segment->bezier.end - at) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return segment;
+    }
+    return nullptr;
+}
+
+
 static bool _noded(const Segment* segment)
 {
     INLIST_FOREACH(segment->intersections, hit) {
-        if (hit->t <= PATHOP_EPSILON * 2.0f) return true;
+        if (hit->t <= PATHOP_EPSILON * 2.0f || hit->t >= 1.0f - PATHOP_EPSILON * 2.0f) return true;
     }
     return false;
 }
@@ -872,10 +882,16 @@ static uint32_t _bridge(Inlist<Contour>& lhs)
             Point ends[2] = {segment->bezier.start, segment->bezier.end};
             for (auto& at : ends) {
                 auto ours = _leaves(contour, at);
+                auto ourT = PATHOP_EPSILON;
+                if (!ours) { ours = _arrives(contour, at); ourT = 1.0f - PATHOP_EPSILON; }
+
                 auto theirs = _leaves(segment->twin->parent, at);
+                auto theirT = PATHOP_EPSILON;
+                if (!theirs) { theirs = _arrives(segment->twin->parent, at); theirT = 1.0f - PATHOP_EPSILON; }
+
                 if (!ours || !theirs) continue;
                 if (_noded(ours) || _noded(theirs)) continue;
-                _pair(ours, PATHOP_EPSILON, theirs, PATHOP_EPSILON);
+                _pair(ours, ourT, theirs, theirT);
                 ++cnt;
             }
         }
