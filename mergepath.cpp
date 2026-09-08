@@ -771,10 +771,10 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 
                     for (auto& root : roots) {
                         _refine(ls->bezier, rs->bezier, root);
-                        //a hit on a shared vertex is reported by both neighbors
                         auto hit = ls->bezier.at(root.t);
-                        auto reach = fmaxf(fabsf(hit.x), fabsf(hit.y)) * 1e-6f;
-                        auto vertex = [&](const Point& pt) { return length2(hit - pt) < reach * reach; };
+                        auto vertex = [&](const Point& pt) {
+                            return length2(hit - pt) < PATHOP_TOLERANCE * PATHOP_TOLERANCE;
+                        };
 
                         //the parameter tells on a long piece, the distance on a short one
                         if (root.t > 1.0f - PATHOP_EPSILON || root.u > 1.0f - PATHOP_EPSILON) continue;
