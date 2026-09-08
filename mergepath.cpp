@@ -880,9 +880,8 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
         }
         if (!first) continue;
 
-        auto winding = _winding(other, first->nextBezier->at(0.5f));
-        first->inside = (winding != 0);
-        auto held = first->inside;
+        auto held = (_winding(other, first->nextBezier->at(0.5f)) != 0);
+        first->inside = held;
 
         auto cur = first;
         while (true) {
@@ -894,12 +893,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
             }
             if (next == first) break;
 
-            auto turn = cross(next->pair->segment->bezier.tangent(next->pair->t), next->segment->bezier.tangent(next->t));
-            auto onRun = (!next->prev && next->segment->prevSegment()->coincident) ||
-                         (!next->pair->prev && next->pair->segment->prevSegment()->coincident);
-            if (onRun || fabsf(turn) < PATHOP_EPSILON) winding = _winding(other, next->nextBezier->at(0.5f));
-            else winding += turn > 0.0f ? 1 : -1;
-            next->inside = (winding != 0);
+            next->inside = (_winding(other, next->nextBezier->at(0.5f)) != 0);
             next->crossing = (next->inside != held);
             held = next->inside;
             cur = next;
