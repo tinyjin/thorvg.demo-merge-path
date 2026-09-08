@@ -915,6 +915,7 @@ static void _mark(Inlist<Contour>& path, const Inlist<Contour>& other)
             held = next->inside;
             cur = next;
         }
+        first->crossing = (first->inside != held);
     }
 }
 
