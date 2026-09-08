@@ -1058,6 +1058,7 @@ static void _stitch(Segment* from, PathOp op, RenderPath& out)
     out.moveTo(segment->bezier.start);
 
     do {
+        if (segment->visited) break;
         segment->visited = true;
         if (segment->twin && !_owned(segment, op)) {
             segment = _handover(segment, forward, op);
