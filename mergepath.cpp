@@ -1094,8 +1094,19 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
 }
 
 
+static bool _sound(const RenderPath& path)
+{
+    for (auto& pt : path.pts) {
+        if (!isfinite(pt.x) || !isfinite(pt.y)) return false;
+    }
+    return true;
+}
+
+
 static bool _op(const RenderPath& lhs, const RenderPath& rhs, RenderPath& out, PathOp op)
 {
+    if (!_sound(lhs) || !_sound(rhs)) return false;
+
     if (lhs.cmds.empty() || rhs.cmds.empty()) {
         if (op == PathOp::Add) {
             if (!lhs.cmds.empty()) _copy(lhs, out);
