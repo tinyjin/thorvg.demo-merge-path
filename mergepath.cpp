@@ -782,11 +782,6 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
                         if (vertex(rs->bezier.start)) root.u = PATHOP_EPSILON;
                         if (root.t < PATHOP_EPSILON) root.t = PATHOP_EPSILON;
                         if (root.u < PATHOP_EPSILON) root.u = PATHOP_EPSILON;
-                        //a touch is not a crossing, the two parting on the same side
-                        auto lt = ls->bezier.tangent(root.t);
-                        auto rt = rs->bezier.tangent(root.u);
-                        auto span = sqrtf(length2(lt)) * sqrtf(length2(rt));
-                        if (span > 0.0f && fabsf(cross(lt, rt)) / span < sqrtf(PATHOP_EPSILON)) continue;
 
                         if (_duplicated(merged, root)) continue;
                         merged.push_back(root);
