@@ -306,7 +306,6 @@ struct Contour
     bool rhs = false;
     bool turn = false;
     uint32_t depth = 0;
-    Point probe{};
 };
 
 Segment* Segment::nextSegment() { return next ? next : parent->segments.head; }
@@ -621,16 +620,31 @@ static int32_t _winding(const Inlist<Contour>& path, const Point& pt)
 }
 
 
+static const float PROBES[] = {0.317f, 0.641f};
+
+template<typename T>
+static bool _within(const T& other, const Contour* contour)
+{
+    uint32_t in = 0, out = 0;
+
+    INLIST_FOREACH(contour->segments, segment) {
+        for (auto t : PROBES) {
+            if (_winding(other, segment->bezier.at(t)) != 0) ++in;
+            else ++out;
+        }
+    }
+    return in > out;
+}
+
+
 //turns every contour to agree with its nesting depth
 static void _orient(Inlist<Contour>& path)
 {
-    INLIST_FOREACH(path, contour) {
-        contour->probe = contour->segments.head->bezier.at(0.5f);
-        contour->depth = 0;
-    }
+    INLIST_FOREACH(path, contour) contour->depth = 0;
+
     INLIST_FOREACH(path, contour) {
         INLIST_FOREACH(path, other) {
-            if (other != contour && _winding(other, contour->probe) != 0) ++contour->depth;
+            if (other != contour && _within(other, contour)) ++contour->depth;
         }
     }
 
@@ -640,7 +654,7 @@ static void _orient(Inlist<Contour>& path)
         if (contour->depth > 0) {
             INLIST_FOREACH(path, other) {
                 if (other == contour || other->depth > 0) continue;
-                if (_winding(other, contour->probe) == 0) continue;
+                if (!_within(other, contour)) continue;
                 facing = _area(other);
                 break;
             }
@@ -854,17 +868,6 @@ static uint32_t _bridge(Inlist<Contour>& lhs)
 }
 
 
-static void _prep(Inlist<Contour>& path)
-{
-    INLIST_FOREACH(path, contour) {
-        INLIST_FOREACH(contour->segments, segment) {
-            segment->sort();
-            segment->split();
-        }
-    }
-}
-
-
 static Point _ahead(const Intersection* hit)
 {
     auto cur = hit;
@@ -1073,20 +1076,6 @@ static void _stitch(Segment* from, PathOp op, RenderPath& out)
         segment = forward ? segment->nextSegment() : segment->prevSegment();
     } while (segment != from);
     out.close();
-}
-
-
-static bool _within(const Inlist<Contour>& other, const Contour* contour)
-{
-    uint32_t in = 0, out = 0;
-
-    INLIST_FOREACH(contour->segments, segment) {
-        for (auto t : {0.317f, 0.641f}) {
-            if (_winding(other, segment->bezier.at(t)) != 0) ++in;
-            else ++out;
-        }
-    }
-    return in > out;
 }
 
 
