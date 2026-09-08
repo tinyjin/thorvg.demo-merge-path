@@ -816,6 +816,22 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
         }
     }
 
+    INLIST_FOREACH(lhs, lc) {
+        INLIST_FOREACH(lc->segments, ls) {
+            if (ls->coincident) continue;
+            INLIST_FOREACH(rhs, rc) {
+                INLIST_FOREACH(rc->segments, rs) {
+                    if (!rs->coincident) continue;
+                    if (auto dir = ls->bezier.overlapped(rs->bezier)) {
+                        ls->coincident = dir;
+                        break;
+                    }
+                }
+                if (ls->coincident) break;
+            }
+        }
+    }
+
     for (auto& hit : pending) {
         if (hit.lhs->coincident || hit.rhs->coincident) continue;
         _pair(hit.lhs, hit.t, hit.rhs, hit.u);
