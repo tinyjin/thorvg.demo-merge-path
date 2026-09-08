@@ -109,7 +109,10 @@ struct Bezier : compat::Bezier
     {
         auto chord = end - start;
         auto leng = length(chord);
-        if (leng < 1e-6f) return true;
+        if (leng < 1e-6f) {
+            constexpr auto near = PATHOP_TOLERANCE * PATHOP_TOLERANCE;
+            return length2(ctrl1 - start) < near && length2(ctrl2 - start) < near;
+        }
         return fabsf(cross(chord, ctrl1 - start)) / leng < PATHOP_STRAIGHT && fabsf(cross(chord, ctrl2 - start)) / leng < PATHOP_STRAIGHT;
     }
 
@@ -460,7 +463,9 @@ static void _copy(const RenderPath& path, RenderPath& out)
 
 static void _append(Contour* contour, const Bezier& bezier)
 {
-    if (length2(bezier.end - bezier.start) < PATHOP_TOLERANCE * PATHOP_TOLERANCE) return;
+    constexpr auto near = PATHOP_TOLERANCE * PATHOP_TOLERANCE;
+    if (length2(bezier.end - bezier.start) < near && length2(bezier.ctrl1 - bezier.start) < near &&
+        length2(bezier.ctrl2 - bezier.start) < near) return;
     auto segment = new Segment;
     segment->bezier = bezier;
     segment->parent = contour;
@@ -504,10 +509,11 @@ static void _contour(const RenderPath& path, bool rhs, const Normalizer& norm, I
     }
     if (contour) _append(contour, Bezier::line(cur, start));
 
-    //drop the contours that carry no area
     {
         INLIST_SAFE_FOREACH(out, empty) {
-            if (empty->segments.count < 2) {
+            auto bare = empty->segments.count == 0 ||
+                        (empty->segments.count < 2 && empty->segments.head->bezier.line());
+            if (bare) {
                 out.remove(empty);
                 delete(empty);
             }
