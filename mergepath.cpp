@@ -965,6 +965,16 @@ static bool _entry(PathOp op, bool rhs)
 }
 
 
+static bool _behind(const Intersection* hit)
+{
+    if (hit->prev) return hit->prev->inside;
+
+    auto segment = hit->segment->prevSegment();
+    while (segment->intersections.empty()) segment = segment->prevSegment();
+    return segment->intersections.tail->inside;
+}
+
+
 static void _merge(Inlist<Contour>& lhs, Inlist<Contour>& rhs, PathOp op, RenderPath& out)
 {
     Inlist<Contour>* sides[2] = {&lhs, &rhs};
@@ -990,7 +1000,10 @@ static void _merge(Inlist<Contour>& lhs, Inlist<Contour>& rhs, PathOp op, Render
                     if (!next->crossing) { cur = next; continue; }
                     next->visited = true;
                     cur = next->pair;
-                    if (op == PathOp::Subtract) forward = !forward; //if subtract, walk backwards
+
+                    auto want = _entry(op, cur->segment->parent->rhs);
+                    if (cur->inside == want) forward = true;
+                    else if (_behind(cur) == want) forward = false;
                 }
                 out.close();
             }
