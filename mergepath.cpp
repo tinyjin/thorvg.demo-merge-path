@@ -1048,6 +1048,20 @@ static void _stitch(Segment* from, PathOp op, RenderPath& out)
 }
 
 
+static bool _within(const Inlist<Contour>& other, const Contour* contour)
+{
+    uint32_t in = 0, out = 0;
+
+    INLIST_FOREACH(contour->segments, segment) {
+        for (auto t : {0.317f, 0.641f}) {
+            if (_winding(other, segment->bezier.at(t)) != 0) ++in;
+            else ++out;
+        }
+    }
+    return in > out;
+}
+
+
 static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, PathOp op, bool lhs, RenderPath& out)
 {
     INLIST_FOREACH(path, contour) {
@@ -1079,7 +1093,7 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
             continue;
         }
 
-        auto inside = (_winding(other, contour->segments.head->bezier.at(0.5f)) != 0);
+        auto inside = _within(other, contour);
         auto keep = false;
         auto flip = false;
 
