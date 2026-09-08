@@ -1,0 +1,3 @@
+# the built harness and its objects; a run writes nothing else
+conformance
+.obj/
