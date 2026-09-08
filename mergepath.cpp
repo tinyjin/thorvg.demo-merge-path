@@ -968,14 +968,17 @@ static Intersection* _advance(RenderPath& out, Intersection* from, bool& forward
     if (auto hit = forward ? from->next : from->prev) return hit;
 
     auto segment = forward ? from->segment->nextSegment() : from->segment->prevSegment();
-    while (segment->intersections.empty()) {
+    auto opening = segment;
+    do {
+        if (!segment->intersections.empty()) break;
         if (segment->twin && !_onward(segment, op)) {
             segment = _handover(segment, forward, op);
             continue;
         }
         _emit(out, segment->bezier, forward);
         segment = forward ? segment->nextSegment() : segment->prevSegment();
-    }
+    } while (segment != opening);
+    if (segment->intersections.empty()) return nullptr;
     auto hit = forward ? segment->intersections.head : segment->intersections.tail;
     _emit(out, forward ? *hit->prevBezier : *hit->nextBezier, forward);
     return hit;
