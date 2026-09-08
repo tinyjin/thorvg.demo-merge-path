@@ -266,6 +266,7 @@ struct Segment
     Inlist<Intersection> intersections;
     Segment* twin = nullptr;  //the piece of the other path this one runs along
     int32_t coincident{};     //0 if apart, +1 if the twin runs along, -1 if against
+    bool visited{};
 
     void sort()
     {
@@ -1035,6 +1036,7 @@ static void _stitch(Segment* from, PathOp op, RenderPath& out)
     out.moveTo(segment->bezier.start);
 
     do {
+        segment->visited = true;
         if (segment->twin && !_owned(segment, op)) {
             segment = _handover(segment, forward, op);
             continue;
@@ -1067,13 +1069,11 @@ static void _uncrossed(Inlist<Contour>& path, const Inlist<Contour>& other, Path
             continue;
         }
 
-        //only a part of it runs along, so it is stitched from the left hand operand
         if (shares) {
             if (lhs) {
                 INLIST_FOREACH(contour->segments, segment) {
-                    if (segment->twin) continue;
+                    if (segment->twin || segment->visited) continue;
                     _stitch(segment, op, out);
-                    break;
                 }
             }
             continue;
