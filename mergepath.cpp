@@ -61,7 +61,7 @@ struct Normalizer
         offset = {(box.min.x + box.max.x) * 0.5f, (box.min.y + box.max.y) * 0.5f};
         auto span = fmaxf(box.max.x - box.min.x, box.max.y - box.min.y);
         if (!(span > 0.0f) || !isfinite(span)) return;
-        auto exp = fmaxf(-60.0f, fminf(60.0f, ceilf(log2f(span))));
+        auto exp = fmaxf(-126.0f, fminf(126.0f, ceilf(log2f(span))));
         scale = exp2f(-exp);
     }
 
@@ -122,6 +122,12 @@ struct Bezier : compat::Bezier
         auto same = [](const Point& lhs, const Point& rhs) {
             return length2(lhs - rhs) < PATHOP_TOLERANCE * PATHOP_TOLERANCE;
         };
+        if (line() && rhs.line()) {
+            if (same(start, rhs.start) && same(end, rhs.end)) return 1;
+            if (same(start, rhs.end) && same(end, rhs.start)) return -1;
+            return 0;
+        }
+
         if (same(start, rhs.start) && same(ctrl1, rhs.ctrl1) && same(ctrl2, rhs.ctrl2) && same(end, rhs.end)) return 1;
         if (same(start, rhs.end) && same(ctrl1, rhs.ctrl2) && same(ctrl2, rhs.ctrl1) && same(end, rhs.start)) return -1;
         return 0;
@@ -328,6 +334,12 @@ struct Hit
     Segment* lhs;
     Segment* rhs;
     float t, u;
+};
+
+struct Cut
+{
+    float t;
+    Point at;
 };
 
 }
@@ -753,19 +765,24 @@ static bool _duplicated(const vector<Root>& roots, const Root& root)
 }
 
 
-static void _cut(Segment* segment, const vector<float>& ts)
+static void _cut(Segment* segment, const vector<Cut>& cuts)
 {
     auto& list = segment->parent->segments;
     auto from = 0.0f;
+    const Point* prev = nullptr;
 
-    for (auto t : ts) {
+    for (auto& cut : cuts) {
         auto piece = new Segment;
-        piece->bezier = segment->bezier.sub(from, t);
+        piece->bezier = segment->bezier.sub(from, cut.t);
+        if (prev) piece->bezier.start = *prev;
+        piece->bezier.end = cut.at;
         piece->parent = segment->parent;
         list.insert(piece, segment);
-        from = t;
+        from = cut.t;
+        prev = &cut.at;
     }
     segment->bezier = segment->bezier.sub(from, 1.0f);
+    if (prev) segment->bezier.start = *prev;
 }
 
 
@@ -790,23 +807,29 @@ static float _site(Segment* segment, Segment* other)
 
 static void _slice(Inlist<Contour>& path, const Inlist<Contour>& other)
 {
-    vector<float> ts;
+    vector<Cut> cuts;
 
     INLIST_FOREACH(path, contour) {
         INLIST_FOREACH(contour->segments, segment) {
-            ts.clear();
+            cuts.clear();
 
             INLIST_FOREACH(other, oc) {
                 INLIST_FOREACH(oc->segments, os) {
                     auto t = _site(segment, os);
-                    if (t >= 0.0f) ts.push_back(t);
+                    if (t < 0.0f) continue;
+
+                    size_t at = 0;
+                    auto seen = false;
+                    for (; at < cuts.size(); ++at) {
+                        if (fabsf(cuts[at].t - t) < PATHOP_EPSILON) { seen = true; break; }
+                        if (cuts[at].t > t) break;
+                    }
+                    if (seen) continue;
+
+                    cuts.insert(cuts.begin() + at, {t, os->bezier.start});
                 }
             }
-            if (ts.empty()) continue;
-
-            sort(ts.begin(), ts.end());
-            ts.erase(unique(ts.begin(), ts.end(), [](float lhs, float rhs) { return rhs - lhs < PATHOP_EPSILON; }), ts.end());
-            _cut(segment, ts);
+            if (!cuts.empty()) _cut(segment, cuts);
         }
     }
 }
