@@ -209,6 +209,7 @@ struct Intersection
     Intersection* pair = nullptr;
     Bezier* prevBezier = nullptr;
     Bezier* nextBezier = nullptr;
+    Point at{};
     float t = 0.0f;
     bool inside{};
     bool crossing = true;
@@ -293,6 +294,9 @@ struct Segment
             auto to = cur->next ? cur->next->t : 1.0f;
             cur->prevBezier = new Bezier(bezier.sub(from, cur->t));
             cur->nextBezier = new Bezier(bezier.sub(cur->t, to));
+            cur->prevBezier->start = cur->prev ? cur->prev->at : bezier.start;
+            cur->prevBezier->end = cur->nextBezier->start = cur->at;
+            cur->nextBezier->end = cur->next ? cur->next->at : bezier.end;
         }
     }
 
@@ -720,17 +724,19 @@ static void _prune(Inlist<Contour>& path)
 /* Intersection                                                         */
 /************************************************************************/
 
-static void _pair(Segment* lhs, float lt, Segment* rhs, float rt)
+static void _pair(Segment* lhs, float lt, Segment* rhs, float rt, const Point& at)
 {
     auto a = new Intersection;
     auto b = new Intersection;
 
     a->segment = lhs;
     a->pair = b;
+    a->at = at;
     a->t = lt;
 
     b->segment = rhs;
     b->pair = a;
+    b->at = at;
     b->t = rt;
 
     lhs->intersections.back(a);
@@ -882,7 +888,7 @@ static uint32_t _intersect(Inlist<Contour>& lhs, Inlist<Contour>& rhs)
 
     for (auto& hit : pending) {
         if (hit.lhs->coincident || hit.rhs->coincident) continue;
-        _pair(hit.lhs, hit.t, hit.rhs, hit.u);
+        _pair(hit.lhs, hit.t, hit.rhs, hit.u, (hit.lhs->bezier.at(hit.t) + hit.rhs->bezier.at(hit.u)) * 0.5f);
         ++cnt;
     }
 
@@ -939,7 +945,7 @@ static uint32_t _bridge(Inlist<Contour>& lhs)
 
                 if (!ours || !theirs) continue;
                 if (_noded(ours) || _noded(theirs)) continue;
-                _pair(ours, ourT, theirs, theirT);
+                _pair(ours, ourT, theirs, theirT, at);
                 ++cnt;
             }
         }
@@ -953,7 +959,7 @@ static Point _ahead(const Intersection* hit)
     auto cur = hit;
 
     do {
-        auto& piece = *cur->nextBezier;
+        auto piece = cur->segment->bezier.sub(cur->t, cur->next ? cur->next->t : 1.0f);
         if (length2(piece.end - piece.start) > PATHOP_TOLERANCE * PATHOP_TOLERANCE) return piece.at(0.5f);
 
         auto next = cur->next;
@@ -965,7 +971,7 @@ static Point _ahead(const Intersection* hit)
         cur = next;
     } while (cur != hit);
 
-    return cur->nextBezier->at(0.5f);
+    return cur->segment->bezier.sub(cur->t, cur->next ? cur->next->t : 1.0f).at(0.5f);
 }
 
 
@@ -1097,7 +1103,7 @@ static void _merge(Inlist<Contour>& lhs, Inlist<Contour>& rhs, PathOp op, Render
             INLIST_FOREACH(segment->intersections, head) {
                 if (head->visited || head->inside != entry) continue;
 
-                out.moveTo(head->segment->bezier.at(head->t));
+                out.moveTo(head->at);
 
                 auto cur = head;
                 auto forward = true;
